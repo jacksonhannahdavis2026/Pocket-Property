@@ -1,73 +1,90 @@
-from dataclasses import dataclass
-from underwriting import UnderwritingResult
-
-
-@dataclass
-class Verdict:
-    label: str
-    color: str
-    reasons: list[str]
-    warnings: list[str]
-
-
-def evaluate(result: UnderwritingResult) -> Verdict:
-    reasons = []
-    warnings = []
+def evaluate(results):
+    concerns = []
+    strengths = []
     score = 0
 
-    if result.cash_on_cash_return >= 8:
+    # DSCR
+    if results["dscr"] >= 1.25:
+        score += 3
+        strengths.append(f"Strong DSCR ({results['dscr']:.2f})")
+    elif results["dscr"] >= 1.00:
         score += 2
-        reasons.append(f"Strong cash-on-cash return ({result.cash_on_cash_return:.1f}%)")
-    elif result.cash_on_cash_return >= 5:
-        score += 1
-        reasons.append(f"Acceptable cash-on-cash return ({result.cash_on_cash_return:.1f}%)")
+        strengths.append(f"DSCR meets minimum target ({results['dscr']:.2f})")
     else:
-        score -= 1
-        warnings.append(f"Weak cash-on-cash return ({result.cash_on_cash_return:.1f}% — target 8%+)")
+        concerns.append(f"DSCR below target ({results['dscr']:.2f})")
 
-    if result.cap_rate >= 7:
+    # Monthly cash flow
+    if results["monthly_net"] >= 500:
         score += 2
-        reasons.append(f"Strong cap rate ({result.cap_rate:.1f}%)")
-    elif result.cap_rate >= 5:
+        strengths.append(
+            f"Positive monthly net cash flow (${results['monthly_net']:,.0f}/mo)"
+        )
+    elif results["monthly_net"] >= 0:
         score += 1
-        reasons.append(f"Acceptable cap rate ({result.cap_rate:.1f}%)")
+        strengths.append("Monthly net cash flow is breakeven or slightly positive")
     else:
-        score -= 1
-        warnings.append(f"Low cap rate ({result.cap_rate:.1f}% — target 5%+)")
+        concerns.append(
+            f"Negative monthly net cash flow (${results['monthly_net']:,.0f}/mo)"
+        )
 
-    if result.monthly_cash_flow > 300:
+    # Revenue gap
+    if results["revenue_gap_dollars"] <= 0:
         score += 2
-        reasons.append(f"Positive monthly cash flow (${result.monthly_cash_flow:,.0f}/mo)")
-    elif result.monthly_cash_flow > 0:
+        strengths.append("Forecasted revenue clears the DSCR target")
+    elif results["revenue_gap_pct"] <= 0.10:
         score += 1
-        reasons.append(f"Slightly positive cash flow (${result.monthly_cash_flow:,.0f}/mo)")
+        concerns.append(f"Small revenue gap ({results['revenue_gap_pct']:.1%})")
     else:
-        score -= 2
-        warnings.append(f"Negative monthly cash flow (${result.monthly_cash_flow:,.0f}/mo)")
+        concerns.append(f"Revenue gap is high ({results['revenue_gap_pct']:.1%})")
 
-    if result.dscr >= 1.25:
+    # Core IRR before tax strategy
+    core_irr = results.get("core_five_year_irr")
+
+    if core_irr is not None and core_irr >= 0.15:
+        score += 3
+        strengths.append(f"Strong core 5-year IRR ({core_irr:.1%})")
+    elif core_irr is not None and core_irr >= 0.08:
+        score += 2
+        strengths.append(f"Acceptable core 5-year IRR ({core_irr:.1%})")
+    elif core_irr is not None and core_irr >= 0.00:
         score += 1
-        reasons.append(f"DSCR healthy ({result.dscr:.2f})")
-    elif result.dscr >= 1.0:
-        reasons.append(f"DSCR acceptable ({result.dscr:.2f})")
+        concerns.append(f"Weak core 5-year IRR ({core_irr:.1%})")
     else:
-        score -= 2
-        warnings.append(f"DSCR below 1.0 ({result.dscr:.2f}) — lender risk")
+        concerns.append("Core 5-year IRR is negative or unavailable")
 
-    if result.gross_rent_multiplier <= 10:
+    # Equity multiple
+    if results["equity_multiple"] >= 1.75:
+        score += 2
+        strengths.append(
+            f"Strong tax-enhanced equity multiple ({results['equity_multiple']:.2f}x)"
+        )
+    elif results["equity_multiple"] >= 1.25:
         score += 1
-        reasons.append(f"Good price-to-rent ratio (GRM {result.gross_rent_multiplier:.1f})")
-    elif result.gross_rent_multiplier <= 15:
-        reasons.append(f"Moderate price-to-rent ratio (GRM {result.gross_rent_multiplier:.1f})")
+        strengths.append(
+            f"Acceptable tax-enhanced equity multiple ({results['equity_multiple']:.2f}x)"
+        )
     else:
-        score -= 1
-        warnings.append(f"High price-to-rent ratio (GRM {result.gross_rent_multiplier:.1f})")
+        concerns.append(f"Equity multiple is low ({results['equity_multiple']:.2f}x)")
 
-    if score >= 6:
-        label, color = "BUY", "green"
-    elif score >= 2:
-        label, color = "MAYBE", "orange"
+    # Tax-enhanced upside, informational only
+    tax_irr = results.get("five_year_irr")
+
+    if tax_irr is not None and tax_irr >= 0.25:
+        strengths.append(
+            f"Large tax-enhanced upside shown by after-tax IRR ({tax_irr:.1%})"
+        )
+
+    # Final verdict
+    if score >= 9:
+        verdict = "BUY"
+    elif score >= 5:
+        verdict = "REVIEW"
     else:
-        label, color = "PASS", "red"
+        verdict = "DO NOT BUY"
 
-    return Verdict(label=label, color=color, reasons=reasons, warnings=warnings)
+    return {
+        "verdict": verdict,
+        "score": score,
+        "reasons": concerns,
+        "strengths": strengths,
+    }
