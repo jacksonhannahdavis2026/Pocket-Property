@@ -782,6 +782,14 @@ if _deal:
                     _mc5.metric("Eq. Multiple", f"{_s['equity_multiple']:.2f}" if _s["equity_multiple"] is not None else "N/A")
                     _mc6.metric("Realism", f"{_realism_color} {_realism}  ·  {_effort}")
 
+                    _hard_lines = []
+                    if _rev_chg_pct > 0.30:
+                        _hard_lines.append("Requires a large increase in revenue relative to current assumptions.")
+                    if _price_chg_pct > 0.20:
+                        _hard_lines.append("Requires a significant price discount below current offer.")
+                    if _hard_lines:
+                        st.caption("⚠️ " + "  ·  ".join(_hard_lines))
+
                     _apply_s = _s
                     if st.button(f"Apply Scenario #{_i}", key=f"apply_scenario_{_i}", use_container_width=True):
                         st.session_state["offer_price"] = float(_apply_s["offer_price"])
