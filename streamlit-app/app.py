@@ -748,4 +748,10 @@ with st.expander("Saved Deals", expanded=False):
         if _view.empty:
             st.caption(f"No deals with status '{_status_filter}'.")
         else:
-            st.dataframe(_view, use_container_width=True, hide_index=True)
+            _col_config = {}
+            if "listing_url" in _view.columns:
+                _col_config["listing_url"] = st.column_config.LinkColumn(
+                    "Listing",
+                    display_text="Open Listing",
+                )
+            st.dataframe(_view, use_container_width=True, hide_index=True, column_config=_col_config)
