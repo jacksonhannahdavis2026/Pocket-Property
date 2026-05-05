@@ -515,6 +515,39 @@ if _deal:
 
     st.info(summary)
 
+    # --- Deal Quality Tier (computed before snapshot so badge can be shown) ---
+    _tier_dscr = results["dscr"]
+    _tier_net = results["monthly_net"]
+    _tier_irr = results.get("core_five_year_irr")
+    _tier_gap_pct = results.get("revenue_gap_pct", 0) or 0
+
+    if (_tier_dscr >= 1.00 and _tier_net >= 0
+            and _tier_irr is not None and _tier_irr >= 0.08):
+        _deal_tier = "STRONG"
+        _expander_title = "How Could This Deal Become Excellent?"
+        _tier_dscr_default = 1.20
+        _tier_net_default = 500
+        _tier_irr_default = 15.0
+        _tier_label = "🟢 STRONG DEAL"
+        _tier_caption = "Clears baseline targets. Optimize for excellence."
+    elif (_tier_gap_pct <= 0.30 or _tier_dscr >= 0.70
+          or (_tier_irr is not None and _tier_irr >= 0.0)):
+        _deal_tier = "FIXABLE"
+        _expander_title = "What Would Make This Deal Work?"
+        _tier_dscr_default = 1.00
+        _tier_net_default = 0
+        _tier_irr_default = 8.0
+        _tier_label = "🟡 CLOSE / FIXABLE"
+        _tier_caption = "Close enough to test reasonable what-if scenarios."
+    else:
+        _deal_tier = "UNREALISTIC"
+        _expander_title = "What Would Make This Deal Work?"
+        _tier_dscr_default = 1.00
+        _tier_net_default = 0
+        _tier_irr_default = 8.0
+        _tier_label = "🔴 UNREALISTIC"
+        _tier_caption = "Too far from baseline. Move on unless assumptions are wrong."
+
     st.subheader("Deal Snapshot")
 
     ds1, ds2 = st.columns(2)
@@ -534,32 +567,8 @@ if _deal:
         pct(results["five_year_irr"]) if results["five_year_irr"] is not None else "N/A",
     )
 
-    # --- Deal Quality Tier ---
-    _tier_dscr = results["dscr"]
-    _tier_net = results["monthly_net"]
-    _tier_irr = results.get("core_five_year_irr")
-    _tier_gap_pct = results.get("revenue_gap_pct", 0) or 0
-
-    if (_tier_dscr >= 1.00 and _tier_net >= 0
-            and _tier_irr is not None and _tier_irr >= 0.08):
-        _deal_tier = "STRONG"
-        _expander_title = "How Could This Deal Become Excellent?"
-        _tier_dscr_default = 1.20
-        _tier_net_default = 500
-        _tier_irr_default = 15.0
-    elif (_tier_gap_pct <= 0.30 or _tier_dscr >= 0.70
-          or (_tier_irr is not None and _tier_irr >= 0.0)):
-        _deal_tier = "FIXABLE"
-        _expander_title = "What Would Make This Deal Work?"
-        _tier_dscr_default = 1.00
-        _tier_net_default = 0
-        _tier_irr_default = 8.0
-    else:
-        _deal_tier = "UNREALISTIC"
-        _expander_title = "What Would Make This Deal Work?"
-        _tier_dscr_default = 1.00
-        _tier_net_default = 0
-        _tier_irr_default = 8.0
+    st.metric("Deal Quality", _tier_label)
+    st.caption(_tier_caption)
 
     if st.session_state.get("_solver_tier_applied") != _deal_tier:
         st.session_state["solver_tgt_dscr"] = _tier_dscr_default
