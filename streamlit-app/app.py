@@ -1,4 +1,7 @@
+import csv
+import os
 import re
+from datetime import datetime, timezone
 
 import pandas as pd
 import streamlit as st
@@ -6,6 +9,49 @@ import streamlit as st
 from underwriting import PropertyInputs, calculate
 from scenarios import build_scenarios
 from verdicts import evaluate
+
+SAVED_DEALS_PATH = os.path.join(os.path.dirname(__file__), "saved_deals.csv")
+
+SAVED_DEALS_COLUMNS = [
+    "saved_at",
+    "property_address",
+    "market_city",
+    "ask_price",
+    "offer_price",
+    "prior_year_annual_income",
+    "hoa_monthly",
+    "taxes_insurance_monthly",
+    "bedrooms",
+    "bathrooms",
+    "square_feet",
+    "verdict",
+    "monthly_net",
+    "dscr",
+    "core_five_year_irr",
+    "five_year_irr",
+    "revenue_gap_dollars",
+    "revenue_gap_pct",
+    "equity_multiple",
+    "deal_notes",
+]
+
+
+def save_deal_to_csv(row: dict) -> None:
+    file_exists = os.path.isfile(SAVED_DEALS_PATH)
+    with open(SAVED_DEALS_PATH, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=SAVED_DEALS_COLUMNS)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow({col: row.get(col, "") for col in SAVED_DEALS_COLUMNS})
+
+
+def load_saved_deals() -> pd.DataFrame | None:
+    if not os.path.isfile(SAVED_DEALS_PATH):
+        return None
+    df = pd.read_csv(SAVED_DEALS_PATH)
+    if df.empty:
+        return None
+    return df.iloc[::-1].reset_index(drop=True)
 
 
 st.set_page_config(page_title="Property Pocket", layout="wide")
@@ -380,6 +426,33 @@ if submitted:
         pct(results["five_year_irr"]) if results["five_year_irr"] is not None else "N/A",
     )
 
+    deal_notes = st.text_area("Deal Notes", placeholder="Location thoughts, inspection flags, seller motivation, comps…", height=100)
+
+    if st.button("Save Deal", use_container_width=True):
+        save_deal_to_csv({
+            "saved_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            "property_address": st.session_state.get("property_address", ""),
+            "market_city": st.session_state.get("market_city", ""),
+            "ask_price": ask_price,
+            "offer_price": offer_price,
+            "prior_year_annual_income": prior_year_annual_income,
+            "hoa_monthly": hoa_monthly,
+            "taxes_insurance_monthly": taxes_insurance_monthly,
+            "bedrooms": st.session_state.get("bedrooms", ""),
+            "bathrooms": st.session_state.get("bathrooms", ""),
+            "square_feet": st.session_state.get("square_feet", ""),
+            "verdict": verdict.get("verdict", ""),
+            "monthly_net": results["monthly_net"],
+            "dscr": results["dscr"],
+            "core_five_year_irr": results["core_five_year_irr"],
+            "five_year_irr": results["five_year_irr"],
+            "revenue_gap_dollars": results["revenue_gap_dollars"],
+            "revenue_gap_pct": results.get("revenue_gap_pct", ""),
+            "equity_multiple": results["equity_multiple"],
+            "deal_notes": deal_notes,
+        })
+        st.success("Deal saved.")
+
     strengths = verdict.get("strengths", [])
     reasons = verdict.get("reasons", [])
 
@@ -539,3 +612,12 @@ if submitted:
         use_container_width=True,
         hide_index=True,
     )
+
+st.divider()
+
+with st.expander("Saved Deals", expanded=False):
+    saved = load_saved_deals()
+    if saved is None:
+        st.caption("No deals saved yet. Analyze a deal and click Save Deal.")
+    else:
+        st.dataframe(saved, use_container_width=True, hide_index=True)
