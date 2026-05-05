@@ -35,6 +35,7 @@ SAVED_DEALS_COLUMNS = [
     "revenue_gap_pct",
     "equity_multiple",
     "deal_notes",
+    "updated_at",
 ]
 
 
@@ -52,6 +53,21 @@ def save_deal_to_csv(row: dict) -> None:
             ignore_index=True,
         )
     combined.to_csv(SAVED_DEALS_PATH, index=False)
+
+
+def update_deal_in_csv(saved_at_key: str, updated_row: dict) -> bool:
+    existing = load_saved_deals(reverse=False)
+    if existing is None or existing == "malformed":
+        return False
+    mask = existing["saved_at"] == saved_at_key
+    if not mask.any():
+        return False
+    for col, val in updated_row.items():
+        if col in existing.columns:
+            existing.loc[mask, col] = val
+    existing.loc[mask, "updated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    existing.to_csv(SAVED_DEALS_PATH, index=False)
+    return True
 
 
 def load_saved_deals(reverse: bool = True) -> pd.DataFrame | None:
@@ -242,6 +258,7 @@ with col_new:
         for key, value in _property_reset.items():
             st.session_state[key] = value
         st.session_state.pop("last_analyzed_deal", None)
+        st.session_state.pop("loaded_saved_at", None)
         st.rerun()
 
 st.divider()
@@ -562,32 +579,50 @@ if _deal:
         key="deal_notes_input",
     )
 
-    if st.button("Save Deal", use_container_width=True):
-        save_deal_to_csv({
-            "saved_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-            "property_address": _property_address,
-            "listing_url": _listing_url,
-            "market_city": _market_city,
-            "ask_price": _ask_price,
-            "offer_price": _offer_price,
-            "prior_year_annual_income": _prior_year_annual_income,
-            "hoa_monthly": _hoa_monthly,
-            "taxes_insurance_monthly": _taxes_insurance_monthly,
-            "bedrooms": _bedrooms,
-            "bathrooms": _bathrooms,
-            "square_feet": _square_feet,
-            "deal_status": st.session_state.get("deal_status_input", ""),
-            "verdict": verdict.get("verdict", ""),
-            "monthly_net": results["monthly_net"],
-            "dscr": results["dscr"],
-            "core_five_year_irr": results["core_five_year_irr"],
-            "five_year_irr": results["five_year_irr"],
-            "revenue_gap_dollars": results["revenue_gap_dollars"],
-            "revenue_gap_pct": results.get("revenue_gap_pct", ""),
-            "equity_multiple": results["equity_multiple"],
-            "deal_notes": st.session_state.get("deal_notes_input", ""),
-        })
-        st.success("Deal saved.")
+    _current_deal_row = {
+        "property_address": _property_address,
+        "listing_url": _listing_url,
+        "market_city": _market_city,
+        "ask_price": _ask_price,
+        "offer_price": _offer_price,
+        "prior_year_annual_income": _prior_year_annual_income,
+        "hoa_monthly": _hoa_monthly,
+        "taxes_insurance_monthly": _taxes_insurance_monthly,
+        "bedrooms": _bedrooms,
+        "bathrooms": _bathrooms,
+        "square_feet": _square_feet,
+        "deal_status": st.session_state.get("deal_status_input", ""),
+        "verdict": verdict.get("verdict", ""),
+        "monthly_net": results["monthly_net"],
+        "dscr": results["dscr"],
+        "core_five_year_irr": results["core_five_year_irr"],
+        "five_year_irr": results["five_year_irr"],
+        "revenue_gap_dollars": results["revenue_gap_dollars"],
+        "revenue_gap_pct": results.get("revenue_gap_pct", ""),
+        "equity_multiple": results["equity_multiple"],
+        "deal_notes": st.session_state.get("deal_notes_input", ""),
+    }
+
+    _btn_col1, _btn_col2 = st.columns(2)
+
+    with _btn_col1:
+        if st.button("Save Deal", use_container_width=True):
+            save_deal_to_csv({
+                **_current_deal_row,
+                "saved_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            })
+            st.session_state.pop("loaded_saved_at", None)
+            st.success("Deal saved.")
+
+    with _btn_col2:
+        _loaded_key = st.session_state.get("loaded_saved_at")
+        if _loaded_key:
+            if st.button("Update Loaded Deal", use_container_width=True, type="primary"):
+                ok = update_deal_in_csv(_loaded_key, _current_deal_row)
+                if ok:
+                    st.success("Deal updated.")
+                else:
+                    st.warning("Could not find the original deal to update. Try saving as a new deal.")
 
     strengths = verdict.get("strengths", [])
     reasons = verdict.get("reasons", [])
@@ -826,4 +861,6 @@ with st.expander("Saved Deals", expanded=False):
                                 except (ValueError, TypeError):
                                     pass
                         st.session_state.pop("last_analyzed_deal", None)
+                        _row_saved_at = _load_row.get("saved_at", "")
+                        st.session_state["loaded_saved_at"] = _row_saved_at if _row_saved_at and not pd.isna(_row_saved_at) else ""
                         st.rerun()
