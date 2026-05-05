@@ -14,6 +14,7 @@ SAVED_DEALS_PATH = os.path.join(os.path.dirname(__file__), "saved_deals.csv")
 
 SAVED_DEALS_COLUMNS = [
     "saved_at",
+    "deal_status",
     "property_address",
     "market_city",
     "ask_price",
@@ -461,6 +462,22 @@ if _deal:
         pct(results["five_year_irr"]) if results["five_year_irr"] is not None else "N/A",
     )
 
+    _status_defaults = {
+        "BUY": "Offer Candidate",
+        "REVIEW": "Review",
+        "DO NOT BUY": "Do Not Buy",
+    }
+    _status_options = ["Review", "Do Not Buy", "Offer Candidate", "Under Diligence", "Archived"]
+    _default_status = _status_defaults.get(verdict_label, "Review")
+    _default_status_idx = _status_options.index(_default_status) if _default_status in _status_options else 0
+
+    deal_status = st.selectbox(
+        "Deal Status",
+        options=_status_options,
+        index=_default_status_idx,
+        key="deal_status_input",
+    )
+
     deal_notes = st.text_area(
         "Deal Notes",
         placeholder="Location thoughts, inspection flags, seller motivation, comps…",
@@ -481,6 +498,7 @@ if _deal:
             "bedrooms": _bedrooms,
             "bathrooms": _bathrooms,
             "square_feet": _square_feet,
+            "deal_status": st.session_state.get("deal_status_input", ""),
             "verdict": verdict.get("verdict", ""),
             "monthly_net": results["monthly_net"],
             "dscr": results["dscr"],
