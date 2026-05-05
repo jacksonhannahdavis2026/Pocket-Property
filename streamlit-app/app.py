@@ -15,6 +15,7 @@ SAVED_DEALS_PATH = os.path.join(os.path.dirname(__file__), "saved_deals.csv")
 SAVED_DEALS_COLUMNS = [
     "saved_at",
     "deal_status",
+    "deal_quality",
     "property_address",
     "listing_url",
     "market_city",
@@ -576,6 +577,8 @@ if _deal:
         st.session_state["solver_tgt_core_irr"] = _tier_irr_default
         st.session_state["_solver_tier_applied"] = _deal_tier
 
+    st.session_state["last_analyzed_deal"]["deal_quality"] = _deal_tier
+
     with st.expander(_expander_title, expanded=False):
         _breakeven = results.get("breakeven_revenue", 0)
         _current_rev = results.get("average_monthly_revenue", 0) * 12
@@ -911,6 +914,7 @@ if _deal:
         "bathrooms": _bathrooms,
         "square_feet": _square_feet,
         "deal_status": st.session_state.get("deal_status_input", ""),
+        "deal_quality": _deal_tier,
         "verdict": verdict.get("verdict", ""),
         "monthly_net": results["monthly_net"],
         "dscr": results["dscr"],
@@ -1089,7 +1093,7 @@ with st.expander("Saved Deals", expanded=False):
         _status_filter = st.selectbox("Filter by Deal Status", options=_status_filter_options, key="saved_deals_filter")
 
         _display_cols = [
-            "saved_at", "deal_status", "property_address", "listing_url", "offer_price",
+            "saved_at", "deal_status", "deal_quality", "property_address", "listing_url", "offer_price",
             "verdict", "monthly_net", "dscr", "core_five_year_irr",
             "revenue_gap_dollars", "deal_notes",
         ]
