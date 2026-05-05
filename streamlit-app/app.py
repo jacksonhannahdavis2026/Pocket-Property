@@ -259,6 +259,7 @@ with col_new:
             st.session_state[key] = value
         st.session_state.pop("last_analyzed_deal", None)
         st.session_state.pop("loaded_saved_at", None)
+        st.session_state.pop("solver_results", None)
         st.rerun()
 
 st.divider()
@@ -687,14 +688,29 @@ if _deal:
                                 })
 
             if not _found:
-                st.warning("No realistic scenario found using the selected investor targets and levers.")
+                st.session_state["solver_results"] = []
             else:
                 _found.sort(key=lambda x: x["_delta"])
-                _top5 = _found[:5]
+                st.session_state["solver_results"] = _found[:5]
+                st.session_state["solver_base_offer"] = _offer_price
+                st.session_state["solver_base_revenue"] = _prior_year_annual_income
+                st.session_state["solver_base_hoa"] = _hoa_monthly
+                st.session_state["solver_base_tax"] = _taxes_insurance_monthly
 
-                for _i, _s in enumerate(_top5, 1):
-                    _price_chg_pct = (_offer_price - _s["offer_price"]) / _offer_price if _offer_price else 0
-                    _rev_chg_pct = (_s["prior_year_annual_income"] - _prior_year_annual_income) / _prior_year_annual_income if _prior_year_annual_income else 0
+        _solver_top5 = st.session_state.get("solver_results")
+
+        if _solver_top5 is not None:
+            if not _solver_top5:
+                st.warning("No realistic scenario found using the selected investor targets and levers.")
+            else:
+                _sb_offer = st.session_state.get("solver_base_offer", _offer_price)
+                _sb_rev = st.session_state.get("solver_base_revenue", _prior_year_annual_income)
+                _sb_hoa = st.session_state.get("solver_base_hoa", _hoa_monthly)
+                _sb_tax = st.session_state.get("solver_base_tax", _taxes_insurance_monthly)
+
+                for _i, _s in enumerate(_solver_top5, 1):
+                    _price_chg_pct = (_sb_offer - _s["offer_price"]) / _sb_offer if _sb_offer else 0
+                    _rev_chg_pct = (_s["prior_year_annual_income"] - _sb_rev) / _sb_rev if _sb_rev else 0
 
                     if _price_chg_pct <= 0.10 and _rev_chg_pct <= 0.15:
                         _realism = "High"
@@ -716,16 +732,16 @@ if _deal:
                     )
 
                     _changes = []
-                    _price_diff = _offer_price - _s["offer_price"]
+                    _price_diff = _sb_offer - _s["offer_price"]
                     if _price_diff != 0:
                         _changes.append(f"Price: {dollars(_s['offer_price'])} (−{dollars(_price_diff)})")
-                    _rev_diff = _s["prior_year_annual_income"] - _prior_year_annual_income
+                    _rev_diff = _s["prior_year_annual_income"] - _sb_rev
                     if _rev_diff != 0:
                         _changes.append(f"Revenue: {dollars(_s['prior_year_annual_income'])} (+{dollars(_rev_diff)})")
-                    _hoa_diff = _hoa_monthly - _s["hoa_monthly"]
+                    _hoa_diff = _sb_hoa - _s["hoa_monthly"]
                     if _hoa_diff != 0:
                         _changes.append(f"HOA: {dollars(_s['hoa_monthly'])}/mo (−{dollars(_hoa_diff)})")
-                    _tax_diff = _taxes_insurance_monthly - _s["taxes_insurance_monthly"]
+                    _tax_diff = _sb_tax - _s["taxes_insurance_monthly"]
                     if _tax_diff != 0:
                         _changes.append(f"Taxes/Ins: {dollars(_s['taxes_insurance_monthly'])}/mo (−{dollars(_tax_diff)})")
 
@@ -742,12 +758,22 @@ if _deal:
                     _mc5.metric("Eq. Multiple", f"{_s['equity_multiple']:.2f}" if _s["equity_multiple"] is not None else "N/A")
                     _mc6.metric("Realism", f"{_realism_color} {_realism}  ·  {_effort}")
 
-                    if _i < len(_top5):
+                    _apply_s = _s
+                    if st.button(f"Apply Scenario #{_i}", key=f"apply_scenario_{_i}", use_container_width=True):
+                        st.session_state["offer_price"] = float(_apply_s["offer_price"])
+                        st.session_state["prior_year_annual_income"] = float(_apply_s["prior_year_annual_income"])
+                        st.session_state["hoa_monthly"] = float(_apply_s["hoa_monthly"])
+                        st.session_state["taxes_insurance_monthly"] = float(_apply_s["taxes_insurance_monthly"])
+                        st.session_state.pop("last_analyzed_deal", None)
+                        st.session_state.pop("solver_results", None)
+                        st.rerun()
+
+                    if _i < len(_solver_top5):
                         st.divider()
 
                 with st.expander("Detailed Solver Table", expanded=False):
                     _rows = []
-                    for _i, _s in enumerate(_top5, 1):
+                    for _i, _s in enumerate(_solver_top5, 1):
                         _rows.append({
                             "Scenario": f"#{_i}",
                             "Offer Price": dollars(_s["offer_price"]),
