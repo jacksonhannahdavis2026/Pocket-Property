@@ -132,7 +132,7 @@ listing_text = st.text_area(
     height=120,
 )
 
-if st.button("Load Property Analysis", use_container_width=True):
+if st.button("Load Property Analysis", use_container_width=True, type="primary"):
     parsed = parse_listing_text(listing_text)
 
     for key, value in parsed.items():
@@ -166,10 +166,6 @@ with st.form("property_form"):
         step=25,
         key="taxes_insurance_monthly",
     )
-
-    submitted = st.form_submit_button("Analyze Deal", use_container_width=True, type="primary")
-
-    st.divider()
 
     with st.expander("Property Details", expanded=False):
         st.caption("Loads automatically from listing text where available.")
@@ -300,6 +296,8 @@ with st.form("property_form"):
 
         roadmap_df = pd.DataFrame(roadmap_data)
         st.dataframe(roadmap_df, use_container_width=True, hide_index=True)
+
+    submitted = st.form_submit_button("Analyze Deal", use_container_width=True, type="primary")
 
 
 if submitted:
