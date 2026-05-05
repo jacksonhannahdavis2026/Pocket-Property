@@ -375,6 +375,41 @@ if submitted:
 
     results = calculate(inputs)
     verdict = evaluate(results)
+    scenarios = build_scenarios(inputs)
+
+    st.session_state["last_analyzed_deal"] = {
+        "results": results,
+        "verdict": verdict,
+        "scenarios": scenarios,
+        "ask_price": ask_price,
+        "offer_price": offer_price,
+        "prior_year_annual_income": prior_year_annual_income,
+        "hoa_monthly": hoa_monthly,
+        "taxes_insurance_monthly": taxes_insurance_monthly,
+        "bedrooms": bedrooms,
+        "bathrooms": bathrooms,
+        "square_feet": square_feet,
+        "property_address": property_address,
+        "market_city": market_city,
+    }
+
+
+_deal = st.session_state.get("last_analyzed_deal")
+
+if _deal:
+    results = _deal["results"]
+    verdict = _deal["verdict"]
+    scenarios = _deal["scenarios"]
+    _ask_price = _deal["ask_price"]
+    _offer_price = _deal["offer_price"]
+    _prior_year_annual_income = _deal["prior_year_annual_income"]
+    _hoa_monthly = _deal["hoa_monthly"]
+    _taxes_insurance_monthly = _deal["taxes_insurance_monthly"]
+    _bedrooms = _deal["bedrooms"]
+    _bathrooms = _deal["bathrooms"]
+    _square_feet = _deal["square_feet"]
+    _property_address = _deal["property_address"]
+    _market_city = _deal["market_city"]
 
     st.divider()
 
@@ -426,21 +461,26 @@ if submitted:
         pct(results["five_year_irr"]) if results["five_year_irr"] is not None else "N/A",
     )
 
-    deal_notes = st.text_area("Deal Notes", placeholder="Location thoughts, inspection flags, seller motivation, comps…", height=100)
+    deal_notes = st.text_area(
+        "Deal Notes",
+        placeholder="Location thoughts, inspection flags, seller motivation, comps…",
+        height=100,
+        key="deal_notes_input",
+    )
 
     if st.button("Save Deal", use_container_width=True):
         save_deal_to_csv({
             "saved_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-            "property_address": st.session_state.get("property_address", ""),
-            "market_city": st.session_state.get("market_city", ""),
-            "ask_price": ask_price,
-            "offer_price": offer_price,
-            "prior_year_annual_income": prior_year_annual_income,
-            "hoa_monthly": hoa_monthly,
-            "taxes_insurance_monthly": taxes_insurance_monthly,
-            "bedrooms": st.session_state.get("bedrooms", ""),
-            "bathrooms": st.session_state.get("bathrooms", ""),
-            "square_feet": st.session_state.get("square_feet", ""),
+            "property_address": _property_address,
+            "market_city": _market_city,
+            "ask_price": _ask_price,
+            "offer_price": _offer_price,
+            "prior_year_annual_income": _prior_year_annual_income,
+            "hoa_monthly": _hoa_monthly,
+            "taxes_insurance_monthly": _taxes_insurance_monthly,
+            "bedrooms": _bedrooms,
+            "bathrooms": _bathrooms,
+            "square_feet": _square_feet,
             "verdict": verdict.get("verdict", ""),
             "monthly_net": results["monthly_net"],
             "dscr": results["dscr"],
@@ -449,7 +489,7 @@ if submitted:
             "revenue_gap_dollars": results["revenue_gap_dollars"],
             "revenue_gap_pct": results.get("revenue_gap_pct", ""),
             "equity_multiple": results["equity_multiple"],
-            "deal_notes": deal_notes,
+            "deal_notes": st.session_state.get("deal_notes_input", ""),
         })
         st.success("Deal saved.")
 
@@ -471,15 +511,15 @@ if submitted:
     st.subheader("Property Snapshot")
 
     p1, p2, p3, p4 = st.columns(4)
-    p1.metric("Bedrooms", f"{bedrooms:g}")
-    p2.metric("Bathrooms", f"{bathrooms:g}")
-    p3.metric("Square Feet", f"{square_feet:,.0f}")
+    p1.metric("Bedrooms", f"{_bedrooms:g}")
+    p2.metric("Bathrooms", f"{_bathrooms:g}")
+    p3.metric("Square Feet", f"{_square_feet:,.0f}")
     p4.metric(
-        "Price / Sq Ft", dollars(offer_price / square_feet) if square_feet else "N/A"
+        "Price / Sq Ft", dollars(_offer_price / _square_feet) if _square_feet else "N/A"
     )
 
-    if property_address:
-        st.caption(f"Address: {property_address}")
+    if _property_address:
+        st.caption(f"Address: {_property_address}")
 
     st.divider()
 
@@ -504,15 +544,11 @@ if submitted:
     r1, r2, r3, r4 = st.columns(4)
     r1.metric(
         "5-Year IRR",
-        pct(results["five_year_irr"])
-        if results["five_year_irr"] is not None
-        else "N/A",
+        pct(results["five_year_irr"]) if results["five_year_irr"] is not None else "N/A",
     )
     r2.metric(
         "Core 5-Year IRR",
-        pct(results["core_five_year_irr"])
-        if results["core_five_year_irr"] is not None
-        else "N/A",
+        pct(results["core_five_year_irr"]) if results["core_five_year_irr"] is not None else "N/A",
     )
     r3.metric("Equity Multiple", multiple(results["equity_multiple"]))
     r4.metric("Cash-on-Cash", pct(results["coc"]))
@@ -539,37 +575,16 @@ if submitted:
 
     cash_flow_table = pd.DataFrame(
         [
-            [
-                "Year 1",
-                results["monthly_net_year_1"],
-                results["monthly_net_year_1"] * 12,
-            ],
-            [
-                "Year 2",
-                results["monthly_net_year_2"],
-                results["monthly_net_year_2"] * 12,
-            ],
-            [
-                "Year 3",
-                results["monthly_net_year_3"],
-                results["monthly_net_year_3"] * 12,
-            ],
-            [
-                "Year 4+",
-                results["monthly_net_year_4_plus"],
-                results["monthly_net_year_4_plus"] * 12,
-            ],
+            ["Year 1", results["monthly_net_year_1"], results["monthly_net_year_1"] * 12],
+            ["Year 2", results["monthly_net_year_2"], results["monthly_net_year_2"] * 12],
+            ["Year 3", results["monthly_net_year_3"], results["monthly_net_year_3"] * 12],
+            ["Year 4+", results["monthly_net_year_4_plus"], results["monthly_net_year_4_plus"] * 12],
         ],
         columns=["Period", "Monthly Net", "Annual Net"],
     )
 
     st.dataframe(
-        cash_flow_table.style.format(
-            {
-                "Monthly Net": "${:,.0f}",
-                "Annual Net": "${:,.0f}",
-            }
-        ),
+        cash_flow_table.style.format({"Monthly Net": "${:,.0f}", "Annual Net": "${:,.0f}"}),
         use_container_width=True,
         hide_index=True,
     )
@@ -578,9 +593,7 @@ if submitted:
 
     st.subheader("Scenario Comparison")
 
-    scenarios = build_scenarios(inputs)
     scenario_rows = []
-
     for name, scenario_results in scenarios.items():
         scenario_rows.append(
             {
