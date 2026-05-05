@@ -38,21 +38,37 @@ SAVED_DEALS_COLUMNS = [
 
 
 def save_deal_to_csv(row: dict) -> None:
-    file_exists = os.path.isfile(SAVED_DEALS_PATH)
-    with open(SAVED_DEALS_PATH, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=SAVED_DEALS_COLUMNS)
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow({col: row.get(col, "") for col in SAVED_DEALS_COLUMNS})
+    new_row = {col: row.get(col, "") for col in SAVED_DEALS_COLUMNS}
+    existing = load_saved_deals(reverse=False)
+    if existing is None:
+        combined = pd.DataFrame([new_row], columns=SAVED_DEALS_COLUMNS)
+    else:
+        for col in SAVED_DEALS_COLUMNS:
+            if col not in existing.columns:
+                existing[col] = ""
+        combined = pd.concat(
+            [existing[SAVED_DEALS_COLUMNS], pd.DataFrame([new_row], columns=SAVED_DEALS_COLUMNS)],
+            ignore_index=True,
+        )
+    combined.to_csv(SAVED_DEALS_PATH, index=False)
 
 
-def load_saved_deals() -> pd.DataFrame | None:
+def load_saved_deals(reverse: bool = True) -> pd.DataFrame | None:
     if not os.path.isfile(SAVED_DEALS_PATH):
         return None
-    df = pd.read_csv(SAVED_DEALS_PATH)
+    try:
+        df = pd.read_csv(SAVED_DEALS_PATH, on_bad_lines="skip")
+    except Exception:
+        return "malformed"
     if df.empty:
         return None
-    return df.iloc[::-1].reset_index(drop=True)
+    for col in SAVED_DEALS_COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+    df = df[SAVED_DEALS_COLUMNS]
+    if reverse:
+        df = df.iloc[::-1].reset_index(drop=True)
+    return df
 
 
 st.set_page_config(page_title="Property Pocket", layout="wide")
@@ -671,7 +687,9 @@ st.divider()
 
 with st.expander("Saved Deals", expanded=False):
     saved = load_saved_deals()
-    if saved is None:
+    if saved == "malformed":
+        st.warning("Saved deals file appears malformed and could not be read. Delete saved_deals.csv to reset.")
+    elif saved is None:
         st.caption("No deals saved yet. Analyze a deal and click Save Deal.")
     else:
         st.dataframe(saved, use_container_width=True, hide_index=True)
