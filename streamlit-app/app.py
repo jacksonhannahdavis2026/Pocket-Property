@@ -361,6 +361,25 @@ if submitted:
 
     st.info(summary)
 
+    st.subheader("Deal Snapshot")
+
+    ds1, ds2 = st.columns(2)
+    ds1.metric("Monthly Net", dollars_month(results["monthly_net"]))
+    ds2.metric("DSCR", f"{results['dscr']:.2f}")
+
+    ds3, ds4 = st.columns(2)
+    ds3.metric(
+        "Core 5-Year IRR",
+        pct(results["core_five_year_irr"]) if results["core_five_year_irr"] is not None else "N/A",
+    )
+    ds4.metric("Revenue Gap", dollars(results["revenue_gap_dollars"]))
+
+    ds5, _ = st.columns(2)
+    ds5.metric(
+        "Tax-Enhanced IRR",
+        pct(results["five_year_irr"]) if results["five_year_irr"] is not None else "N/A",
+    )
+
     strengths = verdict.get("strengths", [])
     reasons = verdict.get("reasons", [])
 
