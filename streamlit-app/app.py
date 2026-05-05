@@ -534,7 +534,40 @@ if _deal:
         pct(results["five_year_irr"]) if results["five_year_irr"] is not None else "N/A",
     )
 
-    with st.expander("What Would Make This Deal Work?", expanded=False):
+    # --- Deal Quality Tier ---
+    _tier_dscr = results["dscr"]
+    _tier_net = results["monthly_net"]
+    _tier_irr = results.get("core_five_year_irr")
+    _tier_gap_pct = results.get("revenue_gap_pct", 0) or 0
+
+    if (_tier_dscr >= 1.00 and _tier_net >= 0
+            and _tier_irr is not None and _tier_irr >= 0.08):
+        _deal_tier = "STRONG"
+        _expander_title = "How Could This Deal Become Excellent?"
+        _tier_dscr_default = 1.20
+        _tier_net_default = 500
+        _tier_irr_default = 15.0
+    elif (_tier_gap_pct <= 0.30 or _tier_dscr >= 0.70
+          or (_tier_irr is not None and _tier_irr >= 0.0)):
+        _deal_tier = "FIXABLE"
+        _expander_title = "What Would Make This Deal Work?"
+        _tier_dscr_default = 1.00
+        _tier_net_default = 0
+        _tier_irr_default = 8.0
+    else:
+        _deal_tier = "UNREALISTIC"
+        _expander_title = "What Would Make This Deal Work?"
+        _tier_dscr_default = 1.00
+        _tier_net_default = 0
+        _tier_irr_default = 8.0
+
+    if st.session_state.get("_solver_tier_applied") != _deal_tier:
+        st.session_state["solver_tgt_dscr"] = _tier_dscr_default
+        st.session_state["solver_tgt_monthly_net"] = float(_tier_net_default)
+        st.session_state["solver_tgt_core_irr"] = _tier_irr_default
+        st.session_state["_solver_tier_applied"] = _deal_tier
+
+    with st.expander(_expander_title, expanded=False):
         _breakeven = results.get("breakeven_revenue", 0)
         _current_rev = results.get("average_monthly_revenue", 0) * 12
         _gap_dollars = results["revenue_gap_dollars"]
@@ -557,32 +590,45 @@ if _deal:
         else:
             st.error("Large gap. Move on unless revenue assumptions materially improve.")
 
-        st.divider()
-        st.markdown("**Investor Targets**")
+        if _deal_tier == "UNREALISTIC":
+            st.divider()
+            st.error(
+                "This deal is too far from your baseline targets. "
+                "Do not spend time optimizing unless the revenue, price, or expense assumptions are materially wrong."
+            )
+        else:
+            if _deal_tier == "STRONG":
+                st.info(
+                    "This deal already clears your baseline. "
+                    "These scenarios show what would make it excellent."
+                )
 
-        _tc1, _tc2 = st.columns(2)
-        with _tc1:
-            _tgt_dscr = st.number_input("Target DSCR", value=1.00, step=0.05, key="solver_tgt_dscr")
-            _tgt_monthly_net = st.number_input("Min Monthly Net ($)", value=0, step=100, key="solver_tgt_monthly_net")
-            _tgt_core_irr = st.number_input("Min Core 5-Yr IRR %", value=8.0, step=0.5, key="solver_tgt_core_irr")
-            _tgt_coc = st.number_input("Min Cash-on-Cash %", value=4.0, step=0.5, key="solver_tgt_coc")
-            _tgt_em = st.number_input("Min Equity Multiple", value=1.25, step=0.05, key="solver_tgt_em")
-        with _tc2:
-            _enforce_dscr = st.checkbox("Enforce DSCR", value=True, key="solver_enforce_dscr")
-            _enforce_monthly_net = st.checkbox("Enforce Monthly Net", value=True, key="solver_enforce_monthly_net")
-            _enforce_core_irr = st.checkbox("Enforce Core 5-Yr IRR", value=True, key="solver_enforce_core_irr")
-            _enforce_coc = st.checkbox("Enforce Cash-on-Cash", value=False, key="solver_enforce_coc")
-            _enforce_em = st.checkbox("Enforce Equity Multiple", value=False, key="solver_enforce_em")
+            st.divider()
+            st.markdown("**Investor Targets**")
 
-        st.markdown("**Solver Levers**")
-        _levers = st.multiselect(
-            "Which levers can the solver adjust?",
-            options=["Lower Offer Price", "Increase Annual Revenue", "Reduce HOA", "Reduce Taxes / Insurance"],
-            default=["Lower Offer Price", "Increase Annual Revenue"],
-            key="solver_levers",
-        )
+            _tc1, _tc2 = st.columns(2)
+            with _tc1:
+                _tgt_dscr = st.number_input("Target DSCR", step=0.05, key="solver_tgt_dscr")
+                _tgt_monthly_net = st.number_input("Min Monthly Net ($)", step=100, key="solver_tgt_monthly_net")
+                _tgt_core_irr = st.number_input("Min Core 5-Yr IRR %", step=0.5, key="solver_tgt_core_irr")
+                _tgt_coc = st.number_input("Min Cash-on-Cash %", value=4.0, step=0.5, key="solver_tgt_coc")
+                _tgt_em = st.number_input("Min Equity Multiple", value=1.25, step=0.05, key="solver_tgt_em")
+            with _tc2:
+                _enforce_dscr = st.checkbox("Enforce DSCR", value=True, key="solver_enforce_dscr")
+                _enforce_monthly_net = st.checkbox("Enforce Monthly Net", value=True, key="solver_enforce_monthly_net")
+                _enforce_core_irr = st.checkbox("Enforce Core 5-Yr IRR", value=True, key="solver_enforce_core_irr")
+                _enforce_coc = st.checkbox("Enforce Cash-on-Cash", value=False, key="solver_enforce_coc")
+                _enforce_em = st.checkbox("Enforce Equity Multiple", value=False, key="solver_enforce_em")
 
-        if st.button("Run Deal Solver", use_container_width=True, type="primary", key="run_solver_btn"):
+            st.markdown("**Solver Levers**")
+            _levers = st.multiselect(
+                "Which levers can the solver adjust?",
+                options=["Lower Offer Price", "Increase Annual Revenue", "Reduce HOA", "Reduce Taxes / Insurance"],
+                default=["Lower Offer Price", "Increase Annual Revenue"],
+                key="solver_levers",
+            )
+
+        if _deal_tier != "UNREALISTIC" and st.button("Run Deal Solver", use_container_width=True, type="primary", key="run_solver_btn"):
             _ss = st.session_state
 
             _base_kwargs = dict(
