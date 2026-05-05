@@ -556,6 +556,156 @@ if _deal:
         else:
             st.error("Large gap. Move on unless revenue assumptions materially improve.")
 
+        st.divider()
+        st.markdown("**Investor Targets**")
+
+        _tc1, _tc2 = st.columns(2)
+        with _tc1:
+            _tgt_dscr = st.number_input("Target DSCR", value=1.00, step=0.05, key="solver_tgt_dscr")
+            _tgt_monthly_net = st.number_input("Min Monthly Net ($)", value=0, step=100, key="solver_tgt_monthly_net")
+            _tgt_core_irr = st.number_input("Min Core 5-Yr IRR %", value=8.0, step=0.5, key="solver_tgt_core_irr")
+            _tgt_coc = st.number_input("Min Cash-on-Cash %", value=4.0, step=0.5, key="solver_tgt_coc")
+            _tgt_em = st.number_input("Min Equity Multiple", value=1.25, step=0.05, key="solver_tgt_em")
+        with _tc2:
+            _enforce_dscr = st.checkbox("Enforce DSCR", value=True, key="solver_enforce_dscr")
+            _enforce_monthly_net = st.checkbox("Enforce Monthly Net", value=True, key="solver_enforce_monthly_net")
+            _enforce_core_irr = st.checkbox("Enforce Core 5-Yr IRR", value=True, key="solver_enforce_core_irr")
+            _enforce_coc = st.checkbox("Enforce Cash-on-Cash", value=False, key="solver_enforce_coc")
+            _enforce_em = st.checkbox("Enforce Equity Multiple", value=False, key="solver_enforce_em")
+
+        st.markdown("**Solver Levers**")
+        _levers = st.multiselect(
+            "Which levers can the solver adjust?",
+            options=["Lower Offer Price", "Increase Annual Revenue", "Reduce HOA", "Reduce Taxes / Insurance"],
+            default=["Lower Offer Price", "Increase Annual Revenue"],
+            key="solver_levers",
+        )
+
+        if st.button("Run Deal Solver", use_container_width=True, type="primary", key="run_solver_btn"):
+            _ss = st.session_state
+
+            _base_kwargs = dict(
+                ask_price=_ask_price,
+                offer_price=_offer_price,
+                down_payment_pct=_ss.get("down_payment_pct_input", 10) / 100,
+                interest_rate=_ss.get("interest_rate_input", 6.75) / 100,
+                prior_year_annual_income=_prior_year_annual_income,
+                loan_term_years=int(_ss.get("loan_term_years", 30)),
+                case_scenario=_ss.get("case_scenario", "Aggressive"),
+                hoa_monthly=_hoa_monthly,
+                taxes_insurance_monthly=_taxes_insurance_monthly,
+                utilities_monthly=_ss.get("utilities_monthly", 0),
+                county_appraisal_value=_ss.get("county_appraisal_value", _offer_price),
+                land_allocation_pct=_ss.get("land_allocation_pct_input", 20) / 100,
+                five_year_asset_pct=_ss.get("five_year_asset_pct_input", 10) / 100,
+                seven_year_asset_pct=_ss.get("seven_year_asset_pct_input", 3) / 100,
+                fifteen_year_asset_pct=_ss.get("fifteen_year_asset_pct_input", 7) / 100,
+                twenty_seven_half_year_asset_pct=_ss.get("twenty_seven_half_year_asset_pct_input", 80) / 100,
+                annual_w2_income=_ss.get("annual_w2_income", 354000),
+                closing_costs=_ss.get("closing_costs", 0),
+                annual_market_appreciation=_ss.get("annual_market_appreciation_input", 2) / 100,
+                annual_rent_appreciation=_ss.get("annual_rent_appreciation_input", 2) / 100,
+                cost_to_sell_pct=_ss.get("cost_to_sell_pct_input", 3) / 100,
+                depreciation_recapture_tax_rate=_ss.get("depreciation_recapture_tax_rate_input", 25) / 100,
+                target_dscr=_ss.get("target_dscr", 1.00),
+            )
+
+            if "Lower Offer Price" in _levers:
+                _min_offer = int(_ask_price * 0.70)
+                _offer_vals = list(range(int(_offer_price), _min_offer - 1, -5000))
+                if not _offer_vals or _offer_vals[-1] > _min_offer:
+                    _offer_vals.append(_min_offer)
+            else:
+                _offer_vals = [int(_offer_price)]
+
+            if "Increase Annual Revenue" in _levers:
+                _max_rev = int(_prior_year_annual_income * 1.50)
+                _rev_vals = list(range(int(_prior_year_annual_income), _max_rev + 1, 2500))
+                if not _rev_vals or _rev_vals[-1] < _max_rev:
+                    _rev_vals.append(_max_rev)
+            else:
+                _rev_vals = [int(_prior_year_annual_income)]
+
+            if "Reduce HOA" in _levers and _hoa_monthly > 0:
+                _min_hoa = int(_hoa_monthly * 0.50)
+                _hoa_vals = list(range(int(_hoa_monthly), _min_hoa - 1, -100))
+                if not _hoa_vals or _hoa_vals[-1] > _min_hoa:
+                    _hoa_vals.append(_min_hoa)
+            else:
+                _hoa_vals = [int(_hoa_monthly)]
+
+            if "Reduce Taxes / Insurance" in _levers and _taxes_insurance_monthly > 0:
+                _min_tax = int(_taxes_insurance_monthly * 0.60)
+                _tax_vals = list(range(int(_taxes_insurance_monthly), _min_tax - 1, -50))
+                if not _tax_vals or _tax_vals[-1] > _min_tax:
+                    _tax_vals.append(_min_tax)
+            else:
+                _tax_vals = [int(_taxes_insurance_monthly)]
+
+            def _meets_targets(r):
+                if _enforce_dscr and r["dscr"] < _tgt_dscr:
+                    return False
+                if _enforce_monthly_net and r["monthly_net"] < _tgt_monthly_net:
+                    return False
+                if _enforce_core_irr and (r["core_five_year_irr"] is None or r["core_five_year_irr"] * 100 < _tgt_core_irr):
+                    return False
+                if _enforce_coc and (r.get("coc") is None or r["coc"] * 100 < _tgt_coc):
+                    return False
+                if _enforce_em and (r.get("equity_multiple") is None or r["equity_multiple"] < _tgt_em):
+                    return False
+                return True
+
+            _found = []
+            for _op in _offer_vals:
+                for _rv in _rev_vals:
+                    for _hoa in _hoa_vals:
+                        for _tx in _tax_vals:
+                            _r = calculate(PropertyInputs(**{**_base_kwargs,
+                                "offer_price": _op,
+                                "prior_year_annual_income": _rv,
+                                "hoa_monthly": _hoa,
+                                "taxes_insurance_monthly": _tx,
+                            }))
+                            if _meets_targets(_r):
+                                _delta = (
+                                    abs(_offer_price - _op)
+                                    + abs(_rv - _prior_year_annual_income) * 10
+                                    + abs(_hoa_monthly - _hoa) * 12
+                                    + abs(_taxes_insurance_monthly - _tx) * 12
+                                )
+                                _found.append({
+                                    "offer_price": _op,
+                                    "prior_year_annual_income": _rv,
+                                    "hoa_monthly": _hoa,
+                                    "taxes_insurance_monthly": _tx,
+                                    "monthly_net": _r["monthly_net"],
+                                    "dscr": _r["dscr"],
+                                    "core_five_year_irr": _r["core_five_year_irr"],
+                                    "coc": _r.get("coc"),
+                                    "equity_multiple": _r.get("equity_multiple"),
+                                    "_delta": _delta,
+                                })
+
+            if not _found:
+                st.warning("No realistic scenario found using the selected investor targets and levers.")
+            else:
+                _found.sort(key=lambda x: x["_delta"])
+                _rows = []
+                for _i, _s in enumerate(_found[:5], 1):
+                    _rows.append({
+                        "Scenario": f"#{_i}",
+                        "Offer Price": dollars(_s["offer_price"]),
+                        "Annual Revenue": dollars(_s["prior_year_annual_income"]),
+                        "HOA /mo": dollars(_s["hoa_monthly"]),
+                        "Taxes / Ins /mo": dollars(_s["taxes_insurance_monthly"]),
+                        "Monthly Net": dollars(_s["monthly_net"]),
+                        "DSCR": f"{_s['dscr']:.2f}",
+                        "Core IRR": pct(_s["core_five_year_irr"]) if _s["core_five_year_irr"] is not None else "N/A",
+                        "CoC": pct(_s["coc"]) if _s["coc"] is not None else "N/A",
+                        "Eq. Multiple": f"{_s['equity_multiple']:.2f}" if _s["equity_multiple"] is not None else "N/A",
+                    })
+                st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
+
     _status_defaults = {
         "BUY": "Offer Candidate",
         "REVIEW": "Review",
@@ -761,7 +911,7 @@ st.divider()
 
 with st.expander("Saved Deals", expanded=False):
     saved = load_saved_deals()
-    if saved == "malformed":
+    if isinstance(saved, str) and saved == "malformed":
         st.warning("Saved deals file appears malformed and could not be read. Delete saved_deals.csv to reset.")
     elif saved is None:
         st.caption("No deals saved yet. Analyze a deal and click Save Deal.")
@@ -798,6 +948,9 @@ with st.expander("Saved Deals", expanded=False):
                 price = row.get("offer_price", "")
                 verdict = row.get("verdict", "")
                 saved_at = row.get("saved_at", "")
+                addr = "" if (addr is None or (isinstance(addr, float))) else str(addr)
+                saved_at = "" if (saved_at is None or (isinstance(saved_at, float))) else str(saved_at)
+                verdict = "" if (verdict is None or (isinstance(verdict, float))) else str(verdict)
                 label = addr if addr else f"Deal saved {saved_at}"
                 if price:
                     try:
@@ -809,7 +962,7 @@ with st.expander("Saved Deals", expanded=False):
                 return label
 
             _full_saved = load_saved_deals()
-            if _full_saved is not None and _full_saved != "malformed":
+            if _full_saved is not None and not (isinstance(_full_saved, str) and _full_saved == "malformed"):
                 if _status_filter != "All":
                     _full_filtered = _full_saved[_full_saved["deal_status"] == _status_filter].reset_index(drop=True)
                 else:

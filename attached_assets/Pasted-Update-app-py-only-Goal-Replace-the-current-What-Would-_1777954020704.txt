@@ -1,0 +1,79 @@
+Update app.py only.
+
+Goal:
+Replace the current "What Would Make This Deal Work?" logic with a flexible user-directed solver.
+
+Do not change underwriting.py, scenarios.py, or verdicts.py.
+Do not change existing calculation logic.
+
+Inside the "What Would Make This Deal Work?" expander:
+
+1. Add a section called "Investor Targets".
+Let the user choose target thresholds:
+- Target DSCR, default 1.00
+- Minimum Monthly Net, default 0
+- Minimum Core 5-Year IRR %, default 8.0
+- Minimum Cash-on-Cash %, default 4.0
+- Minimum Equity Multiple, default 1.25
+
+Also add checkboxes for which metrics to enforce:
+- Enforce DSCR, default checked
+- Enforce Monthly Net, default checked
+- Enforce Core 5-Year IRR, default checked
+- Enforce Cash-on-Cash, default unchecked
+- Enforce Equity Multiple, default unchecked
+
+2. Add a section called "Solver Levers".
+Use a multiselect called "Which levers can the solver adjust?"
+Options:
+- Lower Offer Price
+- Increase Annual Revenue
+- Reduce HOA
+- Reduce Taxes / Insurance
+
+Default selected:
+- Lower Offer Price
+- Increase Annual Revenue
+
+3. Add a button called "Run Deal Solver".
+
+4. When clicked, test scenarios using only selected levers.
+
+Implement simple grid search:
+- Offer price can decrease from current offer_price to 70% of ask_price in $5,000 increments.
+- Annual revenue can increase from current prior_year_annual_income to 150% of current prior_year_annual_income in $2,500 increments.
+- HOA can decrease from current HOA to 50% of current HOA in $100 increments.
+- Taxes / Insurance can decrease from current taxes_insurance_monthly to 60% of current value in $50 increments.
+
+5. For each combination, create a PropertyInputs copy with the adjusted values, run calculate(), and check whether all enforced targets are met:
+- DSCR uses results["dscr"]
+- Monthly Net uses results["monthly_net"]
+- Core 5-Year IRR uses results["core_five_year_irr"]
+- Cash-on-Cash uses results["coc"]
+- Equity Multiple uses results["equity_multiple"]
+
+6. Return the top 5 realistic scenarios.
+Rank scenarios by least amount of total change from the current deal:
+- Smaller offer price reduction is better
+- Smaller revenue increase is better
+- Smaller HOA decrease is better
+- Smaller taxes/insurance decrease is better
+
+7. Display results in a mobile-friendly table with:
+- Scenario
+- Offer Price
+- Annual Revenue
+- HOA
+- Taxes / Insurance
+- Monthly Net
+- DSCR
+- Core 5-Year IRR
+- Cash-on-Cash
+- Equity Multiple
+
+8. If no scenario is found, show:
+"No realistic scenario found using the selected investor targets and levers."
+
+9. Keep existing Required Annual Revenue / Revenue Gap summary if possible, but place it above the solver as a quick diagnostic.
+
+10. Keep this mobile-friendly.
