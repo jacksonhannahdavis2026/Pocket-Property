@@ -195,18 +195,41 @@ listing_text = st.text_area(
     height=120,
 )
 
-if st.button("Load Property Analysis", use_container_width=True, type="primary"):
-    parsed = parse_listing_text(listing_text)
+col_load, col_new = st.columns(2)
 
-    for key, value in parsed.items():
-        st.session_state[key] = value
+with col_load:
+    if st.button("Load Property Analysis", use_container_width=True, type="primary"):
+        parsed = parse_listing_text(listing_text)
 
-    if parsed:
-        st.success("Property details loaded into the model.")
-    else:
-        st.warning(
-            "No property details found yet. Try pasting more listing text instead of only the URL."
-        )
+        for key, value in parsed.items():
+            st.session_state[key] = value
+
+        if parsed:
+            st.success("Property details loaded into the model.")
+        else:
+            st.warning(
+                "No property details found yet. Try pasting more listing text instead of only the URL."
+            )
+
+with col_new:
+    if st.button("Start New Deal", use_container_width=True):
+        _property_reset = {
+            "property_address": "",
+            "market_city": "",
+            "ask_price": 450000,
+            "offer_price": 430000,
+            "bedrooms": 2.0,
+            "bathrooms": 2.0,
+            "square_feet": 1200,
+            "prior_year_annual_income": 45000,
+            "hoa_monthly": 1000,
+            "taxes_insurance_monthly": 365,
+            "utilities_monthly": 0,
+        }
+        for key, value in _property_reset.items():
+            st.session_state[key] = value
+        st.session_state.pop("last_analyzed_deal", None)
+        st.rerun()
 
 st.divider()
 
