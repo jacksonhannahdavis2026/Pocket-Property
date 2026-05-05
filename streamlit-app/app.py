@@ -94,6 +94,9 @@ st.set_page_config(page_title="Property Pocket", layout="wide")
 st.title("Property Pocket")
 st.caption("Fast acquisition screen for STR / rental property underwriting.")
 
+if "new_deal_message" in st.session_state:
+    st.success(st.session_state.pop("new_deal_message"))
+
 
 def dollars(value):
     return f"${value:,.0f}"
@@ -211,6 +214,30 @@ for key, value in default_values.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
+# --- Pending start new deal (must run before any widgets with these keys are created) ---
+if st.session_state.get("pending_start_new_deal"):
+    _property_reset = {
+        "listing_url": "",
+        "property_address": "",
+        "market_city": "",
+        "ask_price": 450000,
+        "offer_price": 430000,
+        "bedrooms": 2.0,
+        "bathrooms": 2.0,
+        "square_feet": 1200,
+        "prior_year_annual_income": 45000,
+        "hoa_monthly": 1000,
+        "taxes_insurance_monthly": 365,
+        "utilities_monthly": 0,
+    }
+    for _k, _v in _property_reset.items():
+        st.session_state[_k] = _v
+    st.session_state.pop("last_analyzed_deal", None)
+    st.session_state.pop("solver_results", None)
+    st.session_state.pop("loaded_saved_at", None)
+    st.session_state.pop("pending_start_new_deal", None)
+    st.session_state["new_deal_message"] = "New deal started."
+
 # --- Pending scenario apply (must run before any widgets with these keys are created) ---
 if "pending_apply_scenario" in st.session_state:
     _pending = st.session_state.pop("pending_apply_scenario")
@@ -252,25 +279,7 @@ with col_load:
 
 with col_new:
     if st.button("Start New Deal", use_container_width=True):
-        _property_reset = {
-            "property_address": "",
-            "listing_url": "",
-            "market_city": "",
-            "ask_price": 450000,
-            "offer_price": 430000,
-            "bedrooms": 2.0,
-            "bathrooms": 2.0,
-            "square_feet": 1200,
-            "prior_year_annual_income": 45000,
-            "hoa_monthly": 1000,
-            "taxes_insurance_monthly": 365,
-            "utilities_monthly": 0,
-        }
-        for key, value in _property_reset.items():
-            st.session_state[key] = value
-        st.session_state.pop("last_analyzed_deal", None)
-        st.session_state.pop("loaded_saved_at", None)
-        st.session_state.pop("solver_results", None)
+        st.session_state["pending_start_new_deal"] = True
         st.rerun()
 
 st.divider()
