@@ -781,11 +781,32 @@ if _deal:
                     st.warning("Recommendation: This is a heavy lift. Only continue if price, revenue, or expenses can change materially.")
                 else:
                     st.info("Recommendation: Try adding another lever or slightly loosening investor targets.")
+
+                if "Lower Offer Price" in _levers and "Increase Annual Revenue" not in _levers:
+                    st.caption("🧠 Deal Driver Insight: Lowering the price alone does not appear to solve this deal within your selected limits.")
             else:
                 _sb_offer = st.session_state.get("solver_base_offer", _offer_price)
                 _sb_rev = st.session_state.get("solver_base_revenue", _prior_year_annual_income)
                 _sb_hoa = st.session_state.get("solver_base_hoa", _hoa_monthly)
                 _sb_tax = st.session_state.get("solver_base_tax", _taxes_insurance_monthly)
+
+                # --- Deal Driver Insight ---
+                _s1 = _solver_top5[0]
+                _s1_price_dropped = _s1["offer_price"] < _sb_offer
+                _s1_rev_increased = _s1["prior_year_annual_income"] > _sb_rev
+                _both_levers = "Lower Offer Price" in _levers and "Increase Annual Revenue" in _levers
+                _rev_only = "Increase Annual Revenue" in _levers and "Lower Offer Price" not in _levers
+
+                if _both_levers:
+                    if _s1_price_dropped and _s1_rev_increased:
+                        _insight = "🧠 Deal Driver Insight: This is a dual-lever deal. It likely needs both a better purchase price and stronger revenue to hit your targets."
+                    elif _s1_rev_increased:
+                        _insight = "🧠 Deal Driver Insight: This is primarily a revenue-driven deal. Better revenue performance is doing most of the work."
+                    else:
+                        _insight = "🧠 Deal Driver Insight: This is primarily a price-driven deal. The deal works mainly by buying it at a lower basis."
+                    st.caption(_insight)
+                elif _rev_only:
+                    st.caption("🧠 Deal Driver Insight: Revenue alone can make this deal work, but validate the income assumption carefully.")
 
                 for _i, _s in enumerate(_solver_top5, 1):
                     _price_chg_pct = (_sb_offer - _s["offer_price"]) / _sb_offer if _sb_offer else 0
