@@ -497,36 +497,7 @@ if _deal:
 
     st.divider()
 
-    st.subheader("Verdict")
-
-    verdict_label = verdict.get("verdict", "REVIEW")
-
-    if verdict_label == "BUY":
-        st.success(f"🟢 {verdict_label}")
-    elif verdict_label == "REVIEW":
-        st.warning(f"🟡 {verdict_label}")
-    else:
-        st.error(f"🔴 {verdict_label}")
-
-    if verdict_label == "BUY":
-        summary = (
-            "This deal appears attractive on core property economics and tax-enhanced returns. "
-            "It deserves deeper diligence."
-        )
-    elif verdict_label == "REVIEW":
-        summary = (
-            "This deal has some attractive qualities, but the economics are not clean enough yet. "
-            "Tighten the assumptions before moving forward."
-        )
-    else:
-        summary = (
-            "This deal should not move forward as currently modeled. "
-            "The property-level economics are too weak before relying on tax benefits."
-        )
-
-    st.info(summary)
-
-    # --- Deal Quality Tier (computed before snapshot so badge can be shown) ---
+    # --- Deal Quality Tier ---
     _tier_dscr = results["dscr"]
     _tier_net = results["monthly_net"]
     _tier_irr = results.get("core_five_year_irr")
@@ -539,8 +510,6 @@ if _deal:
         _tier_dscr_default = 1.20
         _tier_net_default = 500
         _tier_irr_default = 15.0
-        _tier_label = "🟢 STRONG DEAL"
-        _tier_caption = "Clears baseline targets. Optimize for excellence."
     elif (_tier_gap_pct <= 0.30 or _tier_dscr >= 0.70
           or (_tier_irr is not None and _tier_irr >= 0.0)):
         _deal_tier = "FIXABLE"
@@ -548,16 +517,28 @@ if _deal:
         _tier_dscr_default = 1.00
         _tier_net_default = 0
         _tier_irr_default = 8.0
-        _tier_label = "🟡 CLOSE / FIXABLE"
-        _tier_caption = "Close enough to test reasonable what-if scenarios."
     else:
         _deal_tier = "UNREALISTIC"
         _expander_title = "What Would Make This Deal Work?"
         _tier_dscr_default = 1.00
         _tier_net_default = 0
         _tier_irr_default = 8.0
-        _tier_label = "🔴 UNREALISTIC"
-        _tier_caption = "Too far from baseline. Move on unless assumptions are wrong."
+
+    verdict_label = verdict.get("verdict", "REVIEW")
+
+    st.subheader("Deal Decision")
+
+    if _deal_tier == "STRONG":
+        st.success("🟢 STRONG DEAL")
+        summary = "This deal clears your baseline targets. Focus on whether it can become excellent."
+    elif _deal_tier == "FIXABLE":
+        st.warning("🟡 CLOSE / FIXABLE")
+        summary = "This deal is close enough to test reasonable what-if scenarios before deciding."
+    else:
+        st.error("🔴 UNREALISTIC")
+        summary = "This deal is too far from your baseline targets. Move on unless assumptions are materially wrong."
+
+    st.info(summary)
 
     st.subheader("Deal Snapshot")
 
@@ -577,9 +558,6 @@ if _deal:
         "Tax-Enhanced IRR",
         pct(results["five_year_irr"]) if results["five_year_irr"] is not None else "N/A",
     )
-
-    st.metric("Deal Quality", _tier_label)
-    st.caption(_tier_caption)
 
     if st.session_state.get("_solver_tier_applied") != _deal_tier:
         st.session_state["solver_tgt_dscr"] = _tier_dscr_default
