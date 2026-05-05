@@ -16,6 +16,17 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
 
+## Streamlit App — Real Estate Investment Evaluator
+
+Located in `streamlit-app/`. Runs on port 5000 via the "Start application" workflow.
+
+- `streamlit-app/app.py` — main UI and input form
+- `streamlit-app/underwriting.py` — financial calculations (mortgage, NOI, cap rate, CoC, DSCR, ROI)
+- `streamlit-app/scenarios.py` — bear/base/bull scenario builder
+- `streamlit-app/verdicts.py` — buy/maybe/pass scoring logic
+- `streamlit-app/.streamlit/config.toml` — headless server config
+- `streamlit-app/requirements.txt` — streamlit + pandas
+
 ## Key Commands
 
 - `pnpm run typecheck` — full typecheck across all packages
