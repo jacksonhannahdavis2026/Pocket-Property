@@ -211,6 +211,16 @@ for key, value in default_values.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
+# --- Pending scenario apply (must run before any widgets with these keys are created) ---
+if "pending_apply_scenario" in st.session_state:
+    _pending = st.session_state.pop("pending_apply_scenario")
+    st.session_state["offer_price"] = _pending["offer_price"]
+    st.session_state["prior_year_annual_income"] = _pending["prior_year_annual_income"]
+    st.session_state["hoa_monthly"] = _pending["hoa_monthly"]
+    st.session_state["taxes_insurance_monthly"] = _pending["taxes_insurance_monthly"]
+    st.session_state.pop("last_analyzed_deal", None)
+    st.session_state.pop("solver_results", None)
+    st.info("Scenario applied. Review updated inputs, then tap Analyze Deal.")
 
 listing_text = st.text_area(
     "Paste Zillow URL or listing text",
@@ -850,12 +860,12 @@ if _deal:
 
                     _apply_s = _s
                     if st.button(f"Apply Scenario #{_i}", key=f"apply_scenario_{_i}", use_container_width=True):
-                        st.session_state["offer_price"] = float(_apply_s["offer_price"])
-                        st.session_state["prior_year_annual_income"] = float(_apply_s["prior_year_annual_income"])
-                        st.session_state["hoa_monthly"] = float(_apply_s["hoa_monthly"])
-                        st.session_state["taxes_insurance_monthly"] = float(_apply_s["taxes_insurance_monthly"])
-                        st.session_state.pop("last_analyzed_deal", None)
-                        st.session_state.pop("solver_results", None)
+                        st.session_state["pending_apply_scenario"] = {
+                            "offer_price": float(_apply_s["offer_price"]),
+                            "prior_year_annual_income": float(_apply_s["prior_year_annual_income"]),
+                            "hoa_monthly": float(_apply_s["hoa_monthly"]),
+                            "taxes_insurance_monthly": float(_apply_s["taxes_insurance_monthly"]),
+                        }
                         st.rerun()
 
                     if _i < len(_solver_top5):
