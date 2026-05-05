@@ -462,6 +462,29 @@ if _deal:
         pct(results["five_year_irr"]) if results["five_year_irr"] is not None else "N/A",
     )
 
+    with st.expander("What Would Make This Deal Work?", expanded=False):
+        _breakeven = results.get("breakeven_revenue", 0)
+        _current_rev = results.get("average_monthly_revenue", 0) * 12
+        _gap_dollars = results["revenue_gap_dollars"]
+        _gap_pct = results.get("revenue_gap_pct", 0)
+
+        bm1, bm2 = st.columns(2)
+        bm1.metric("Required Annual Revenue", dollars(_breakeven))
+        bm2.metric("Current Annual Revenue", dollars(_current_rev))
+
+        bm3, bm4 = st.columns(2)
+        bm3.metric("Revenue Increase Needed", dollars(max(_gap_dollars, 0)))
+        bm4.metric("Revenue Gap %", f"{_gap_pct:.1%}" if _gap_pct is not None else "N/A")
+
+        if _gap_dollars <= 0:
+            st.success("Revenue already clears the target DSCR.")
+        elif _gap_pct <= 0.10:
+            st.info("Small gap. This may be fixable with modestly better revenue or expenses.")
+        elif _gap_pct <= 0.25:
+            st.warning("Medium gap. The deal likely needs a lower offer price or stronger revenue proof.")
+        else:
+            st.error("Large gap. Move on unless revenue assumptions materially improve.")
+
     _status_defaults = {
         "BUY": "Offer Candidate",
         "REVIEW": "Review",
