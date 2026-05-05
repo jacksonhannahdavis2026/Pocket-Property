@@ -689,6 +689,12 @@ if _deal:
 
             if not _found:
                 st.session_state["solver_results"] = []
+                st.session_state["solver_no_result_gap"] = {
+                    "current_rev": results.get("average_monthly_revenue", 0) * 12,
+                    "breakeven_rev": results.get("breakeven_revenue", 0),
+                    "gap_dollars": results.get("revenue_gap_dollars", 0),
+                    "gap_pct": results.get("revenue_gap_pct", 0),
+                }
             else:
                 _found.sort(key=lambda x: x["_delta"])
                 st.session_state["solver_results"] = _found[:5]
@@ -701,7 +707,25 @@ if _deal:
 
         if _solver_top5 is not None:
             if not _solver_top5:
-                st.warning("No realistic scenario found using the selected investor targets and levers.")
+                st.error("No realistic scenario found within the selected limits.")
+                _no_gap = st.session_state.get("solver_no_result_gap", {})
+                _ng_current = _no_gap.get("current_rev", 0)
+                _ng_breakeven = _no_gap.get("breakeven_rev", 0)
+                _ng_gap_dollars = _no_gap.get("gap_dollars", 0)
+                _ng_gap_pct = _no_gap.get("gap_pct", 0)
+                if _ng_current or _ng_breakeven:
+                    _ng1, _ng2 = st.columns(2)
+                    _ng1.metric("Current Annual Revenue", dollars(_ng_current))
+                    _ng2.metric("Required Annual Revenue", dollars(_ng_breakeven))
+                    _ng3, _ng4 = st.columns(2)
+                    _ng3.metric("Revenue Increase Needed", dollars(max(_ng_gap_dollars, 0)))
+                    _ng4.metric("Revenue Gap %", f"{_ng_gap_pct:.1%}" if _ng_gap_pct is not None else "N/A")
+                if _ng_gap_pct is not None and _ng_gap_pct > 0.50:
+                    st.warning("Recommendation: Move on unless you have strong proof that revenue can materially outperform the current estimate.")
+                elif _ng_gap_pct is not None and _ng_gap_pct > 0.25:
+                    st.warning("Recommendation: This is a heavy lift. Only continue if price, revenue, or expenses can change materially.")
+                else:
+                    st.info("Recommendation: Try adding another lever or slightly loosening investor targets.")
             else:
                 _sb_offer = st.session_state.get("solver_base_offer", _offer_price)
                 _sb_rev = st.session_state.get("solver_base_revenue", _prior_year_annual_income)
