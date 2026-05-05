@@ -16,6 +16,7 @@ SAVED_DEALS_COLUMNS = [
     "saved_at",
     "deal_status",
     "property_address",
+    "listing_url",
     "market_city",
     "ask_price",
     "offer_price",
@@ -139,6 +140,10 @@ def parse_listing_text(text):
             annual_tax_estimate = int(nums[0])
             parsed["taxes_insurance_monthly"] = round(annual_tax_estimate / 12)
 
+    url_match = re.search(r"https?://\S+", text)
+    if url_match:
+        parsed["listing_url"] = url_match.group(0).rstrip(")")
+
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     for line in lines:
         if re.search(r"\b[A-Z]{2}\s+\d{5}\b", line):
@@ -155,6 +160,7 @@ def parse_listing_text(text):
 
 default_values = {
     "property_address": "",
+    "listing_url": "",
     "market_city": "",
     "bedrooms": 2.0,
     "bathrooms": 2.0,
@@ -195,6 +201,12 @@ listing_text = st.text_area(
     height=120,
 )
 
+listing_url = st.text_input(
+    "Listing URL",
+    placeholder="https://www.zillow.com/homedetails/...",
+    key="listing_url",
+)
+
 col_load, col_new = st.columns(2)
 
 with col_load:
@@ -215,6 +227,7 @@ with col_new:
     if st.button("Start New Deal", use_container_width=True):
         _property_reset = {
             "property_address": "",
+            "listing_url": "",
             "market_city": "",
             "ask_price": 450000,
             "offer_price": 430000,
@@ -430,6 +443,7 @@ if submitted:
         "bathrooms": bathrooms,
         "square_feet": square_feet,
         "property_address": property_address,
+        "listing_url": st.session_state.get("listing_url", ""),
         "market_city": market_city,
     }
 
@@ -449,6 +463,7 @@ if _deal:
     _bathrooms = _deal["bathrooms"]
     _square_feet = _deal["square_feet"]
     _property_address = _deal["property_address"]
+    _listing_url = _deal.get("listing_url", "")
     _market_city = _deal["market_city"]
 
     st.divider()
@@ -551,6 +566,7 @@ if _deal:
         save_deal_to_csv({
             "saved_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
             "property_address": _property_address,
+            "listing_url": _listing_url,
             "market_city": _market_city,
             "ask_price": _ask_price,
             "offer_price": _offer_price,
@@ -719,7 +735,7 @@ with st.expander("Saved Deals", expanded=False):
         _status_filter = st.selectbox("Filter by Deal Status", options=_status_filter_options, key="saved_deals_filter")
 
         _display_cols = [
-            "saved_at", "deal_status", "property_address", "offer_price",
+            "saved_at", "deal_status", "property_address", "listing_url", "offer_price",
             "verdict", "monthly_net", "dscr", "core_five_year_irr",
             "revenue_gap_dollars", "deal_notes",
         ]
