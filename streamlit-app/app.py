@@ -755,3 +755,75 @@ with st.expander("Saved Deals", expanded=False):
                     display_text="Open Listing",
                 )
             st.dataframe(_view, use_container_width=True, hide_index=True, column_config=_col_config)
+
+            st.caption("Load a saved deal back into the form:")
+
+            def _deal_label(row):
+                addr = row.get("property_address", "") or ""
+                price = row.get("offer_price", "")
+                verdict = row.get("verdict", "")
+                saved_at = row.get("saved_at", "")
+                label = addr if addr else f"Deal saved {saved_at}"
+                if price:
+                    try:
+                        label += f"  ·  ${float(price):,.0f}"
+                    except (ValueError, TypeError):
+                        pass
+                if verdict:
+                    label += f"  ·  {verdict}"
+                return label
+
+            _full_saved = load_saved_deals()
+            if _full_saved is not None and _full_saved != "malformed":
+                if _status_filter != "All":
+                    _full_filtered = _full_saved[_full_saved["deal_status"] == _status_filter].reset_index(drop=True)
+                else:
+                    _full_filtered = _full_saved.reset_index(drop=True)
+
+                if not _full_filtered.empty:
+                    _labels = [_deal_label(row) for _, row in _full_filtered.iterrows()]
+                    _selected_idx = st.selectbox(
+                        "Select deal to load",
+                        options=range(len(_labels)),
+                        format_func=lambda i: _labels[i],
+                        key="saved_deal_selector",
+                        label_visibility="collapsed",
+                    )
+
+                    if st.button("Load Selected Deal", use_container_width=True):
+                        _load_row = _full_filtered.iloc[_selected_idx]
+                        _loadable = {
+                            "property_address": "property_address",
+                            "market_city": "market_city",
+                            "listing_url": "listing_url",
+                            "bedrooms": "bedrooms",
+                            "bathrooms": "bathrooms",
+                            "square_feet": "square_feet",
+                            "prior_year_annual_income": "prior_year_annual_income",
+                            "hoa_monthly": "hoa_monthly",
+                            "taxes_insurance_monthly": "taxes_insurance_monthly",
+                            "utilities_monthly": "utilities_monthly",
+                        }
+                        _numeric = {"bedrooms", "bathrooms", "square_feet",
+                                    "prior_year_annual_income", "hoa_monthly",
+                                    "taxes_insurance_monthly", "utilities_monthly",
+                                    "ask_price", "offer_price"}
+                        for state_key, csv_col in _loadable.items():
+                            if csv_col in _load_row.index:
+                                val = _load_row[csv_col]
+                                if state_key in _numeric:
+                                    try:
+                                        val = float(val) if val != "" else default_values.get(state_key, 0)
+                                    except (ValueError, TypeError):
+                                        val = default_values.get(state_key, 0)
+                                else:
+                                    val = "" if pd.isna(val) else str(val)
+                                st.session_state[state_key] = val
+                        for price_key, csv_col in [("ask_price", "ask_price"), ("offer_price", "offer_price")]:
+                            if csv_col in _load_row.index:
+                                try:
+                                    st.session_state[price_key] = float(_load_row[csv_col])
+                                except (ValueError, TypeError):
+                                    pass
+                        st.session_state.pop("last_analyzed_deal", None)
+                        st.rerun()
