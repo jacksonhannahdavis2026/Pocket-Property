@@ -690,21 +690,77 @@ if _deal:
                 st.warning("No realistic scenario found using the selected investor targets and levers.")
             else:
                 _found.sort(key=lambda x: x["_delta"])
-                _rows = []
-                for _i, _s in enumerate(_found[:5], 1):
-                    _rows.append({
-                        "Scenario": f"#{_i}",
-                        "Offer Price": dollars(_s["offer_price"]),
-                        "Annual Revenue": dollars(_s["prior_year_annual_income"]),
-                        "HOA /mo": dollars(_s["hoa_monthly"]),
-                        "Taxes / Ins /mo": dollars(_s["taxes_insurance_monthly"]),
-                        "Monthly Net": dollars(_s["monthly_net"]),
-                        "DSCR": f"{_s['dscr']:.2f}",
-                        "Core IRR": pct(_s["core_five_year_irr"]) if _s["core_five_year_irr"] is not None else "N/A",
-                        "CoC": pct(_s["coc"]) if _s["coc"] is not None else "N/A",
-                        "Eq. Multiple": f"{_s['equity_multiple']:.2f}" if _s["equity_multiple"] is not None else "N/A",
-                    })
-                st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
+                _top5 = _found[:5]
+
+                for _i, _s in enumerate(_top5, 1):
+                    _price_chg_pct = (_offer_price - _s["offer_price"]) / _offer_price if _offer_price else 0
+                    _rev_chg_pct = (_s["prior_year_annual_income"] - _prior_year_annual_income) / _prior_year_annual_income if _prior_year_annual_income else 0
+
+                    if _price_chg_pct <= 0.10 and _rev_chg_pct <= 0.15:
+                        _realism = "High"
+                        _effort = "Easy Fix"
+                        _realism_color = "🟢"
+                    elif _price_chg_pct <= 0.20 and _rev_chg_pct <= 0.30:
+                        _realism = "Medium"
+                        _effort = "Moderate Fix"
+                        _realism_color = "🟡"
+                    else:
+                        _realism = "Low"
+                        _effort = "Heavy Lift"
+                        _realism_color = "🔴"
+
+                    _header = f"**Scenario #{_i}**" + ("  ⭐ Top Pick" if _i == 1 else "")
+                    st.markdown(_header)
+                    st.caption(
+                        f"Offer: **{dollars(_s['offer_price'])}**  |  Revenue: **{dollars(_s['prior_year_annual_income'])}**"
+                    )
+
+                    _changes = []
+                    _price_diff = _offer_price - _s["offer_price"]
+                    if _price_diff != 0:
+                        _changes.append(f"Price: {dollars(_s['offer_price'])} (−{dollars(_price_diff)})")
+                    _rev_diff = _s["prior_year_annual_income"] - _prior_year_annual_income
+                    if _rev_diff != 0:
+                        _changes.append(f"Revenue: {dollars(_s['prior_year_annual_income'])} (+{dollars(_rev_diff)})")
+                    _hoa_diff = _hoa_monthly - _s["hoa_monthly"]
+                    if _hoa_diff != 0:
+                        _changes.append(f"HOA: {dollars(_s['hoa_monthly'])}/mo (−{dollars(_hoa_diff)})")
+                    _tax_diff = _taxes_insurance_monthly - _s["taxes_insurance_monthly"]
+                    if _tax_diff != 0:
+                        _changes.append(f"Taxes/Ins: {dollars(_s['taxes_insurance_monthly'])}/mo (−{dollars(_tax_diff)})")
+
+                    if _changes:
+                        st.markdown("*What Changed:* " + "  ·  ".join(_changes))
+
+                    _mc1, _mc2 = st.columns(2)
+                    _mc1.metric("Monthly Net", dollars(_s["monthly_net"]))
+                    _mc2.metric("DSCR", f"{_s['dscr']:.2f}")
+                    _mc3, _mc4 = st.columns(2)
+                    _mc3.metric("Core IRR", pct(_s["core_five_year_irr"]) if _s["core_five_year_irr"] is not None else "N/A")
+                    _mc4.metric("Cash-on-Cash", pct(_s["coc"]) if _s["coc"] is not None else "N/A")
+                    _mc5, _mc6 = st.columns(2)
+                    _mc5.metric("Eq. Multiple", f"{_s['equity_multiple']:.2f}" if _s["equity_multiple"] is not None else "N/A")
+                    _mc6.metric("Realism", f"{_realism_color} {_realism}  ·  {_effort}")
+
+                    if _i < len(_top5):
+                        st.divider()
+
+                with st.expander("Detailed Solver Table", expanded=False):
+                    _rows = []
+                    for _i, _s in enumerate(_top5, 1):
+                        _rows.append({
+                            "Scenario": f"#{_i}",
+                            "Offer Price": dollars(_s["offer_price"]),
+                            "Annual Revenue": dollars(_s["prior_year_annual_income"]),
+                            "HOA /mo": dollars(_s["hoa_monthly"]),
+                            "Taxes / Ins /mo": dollars(_s["taxes_insurance_monthly"]),
+                            "Monthly Net": dollars(_s["monthly_net"]),
+                            "DSCR": f"{_s['dscr']:.2f}",
+                            "Core IRR": pct(_s["core_five_year_irr"]) if _s["core_five_year_irr"] is not None else "N/A",
+                            "CoC": pct(_s["coc"]) if _s["coc"] is not None else "N/A",
+                            "Eq. Multiple": f"{_s['equity_multiple']:.2f}" if _s["equity_multiple"] is not None else "N/A",
+                        })
+                    st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
 
     _status_defaults = {
         "BUY": "Offer Candidate",
