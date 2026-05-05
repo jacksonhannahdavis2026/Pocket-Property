@@ -692,4 +692,21 @@ with st.expander("Saved Deals", expanded=False):
     elif saved is None:
         st.caption("No deals saved yet. Analyze a deal and click Save Deal.")
     else:
-        st.dataframe(saved, use_container_width=True, hide_index=True)
+        _status_filter_options = ["All", "Review", "Do Not Buy", "Offer Candidate", "Under Diligence", "Archived"]
+        _status_filter = st.selectbox("Filter by Deal Status", options=_status_filter_options, key="saved_deals_filter")
+
+        _display_cols = [
+            "saved_at", "deal_status", "property_address", "offer_price",
+            "verdict", "monthly_net", "dscr", "core_five_year_irr",
+            "revenue_gap_dollars", "deal_notes",
+        ]
+        _visible_cols = [c for c in _display_cols if c in saved.columns]
+        _view = saved[_visible_cols].copy()
+
+        if _status_filter != "All":
+            _view = _view[_view["deal_status"] == _status_filter]
+
+        if _view.empty:
+            st.caption(f"No deals with status '{_status_filter}'.")
+        else:
+            st.dataframe(_view, use_container_width=True, hide_index=True)
