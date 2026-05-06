@@ -2,6 +2,8 @@ import csv
 import os
 import re
 from datetime import datetime, timezone
+from html import escape
+from urllib.parse import quote_plus
 
 import pandas as pd
 import streamlit as st
@@ -16,6 +18,9 @@ SAVED_DEALS_COLUMNS = [
     "saved_at",
     "deal_status",
     "deal_quality",
+    "revenue_confidence",
+    "max_offer",
+    "pass_reason",
     "property_address",
     "listing_url",
     "market_city",
@@ -91,8 +96,209 @@ def load_saved_deals(reverse: bool = True) -> pd.DataFrame | None:
 
 st.set_page_config(page_title="Property Pocket", layout="wide")
 
+st.markdown(
+    """
+    <style>
+        :root {
+            --pp-bg: #F7F4EE;
+            --pp-surface: #FCFBF8;
+            --pp-border: #E7E1D7;
+            --pp-primary: #355E52;
+            --pp-primary-dark: #2E3A36;
+            --pp-gold: #C8B28A;
+            --pp-text: #2E3A36;
+            --pp-muted: #6F7A74;
+            --pp-success: #4E7A67;
+            --pp-warning: #C89B5A;
+            --pp-risk: #B86A5B;
+            --pp-info: #5F7480;
+        }
+        .stApp {
+            background: var(--pp-bg);
+            color: var(--pp-text);
+        }
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 3rem;
+            max-width: 1180px;
+        }
+        .pp-section-header {
+            margin: 1.45rem 0 0.6rem;
+            padding-top: 0.25rem;
+        }
+        .pp-section-title {
+            margin: 0;
+            color: var(--pp-text);
+            font-size: 1.22rem;
+            font-weight: 700;
+            letter-spacing: 0;
+        }
+        .pp-section-subtitle,
+        .pp-muted {
+            color: var(--pp-muted);
+            font-size: 0.92rem;
+            line-height: 1.45;
+        }
+        .pp-section-subtitle {
+            margin-top: 0.2rem;
+        }
+        .pp-card {
+            border: 1px solid var(--pp-border);
+            border-radius: 8px;
+            background: var(--pp-surface);
+            padding: 0.9rem 1rem;
+            margin: 0.55rem 0;
+            box-shadow: 0 1px 2px rgba(46, 58, 54, 0.05);
+        }
+        .pp-card-title {
+            color: var(--pp-text);
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+        .pp-card-body {
+            color: var(--pp-muted);
+            font-size: 0.92rem;
+            line-height: 1.45;
+        }
+        .pp-badge {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 0.28rem 0.72rem;
+            font-size: 0.86rem;
+            font-weight: 700;
+            letter-spacing: 0;
+            border: 1px solid transparent;
+            margin: 0.15rem 0 0.45rem;
+        }
+        .pp-badge-info {
+            background: rgba(95, 116, 128, 0.12);
+            color: var(--pp-info);
+            border-color: rgba(95, 116, 128, 0.28);
+        }
+        .pp-badge-success {
+            background: rgba(78, 122, 103, 0.12);
+            color: var(--pp-success);
+            border-color: rgba(78, 122, 103, 0.28);
+        }
+        .pp-badge-warning {
+            background: rgba(200, 155, 90, 0.14);
+            color: var(--pp-warning);
+            border-color: rgba(200, 155, 90, 0.32);
+        }
+        .pp-badge-danger {
+            background: rgba(184, 106, 91, 0.13);
+            color: var(--pp-risk);
+            border-color: rgba(184, 106, 91, 0.32);
+        }
+        div[data-testid="stMetric"] {
+            border: 1px solid var(--pp-border);
+            border-radius: 8px;
+            padding: 0.75rem 0.85rem;
+            background: var(--pp-surface);
+            box-shadow: 0 1px 2px rgba(46, 58, 54, 0.04);
+        }
+        div[data-testid="stMetricLabel"] {
+            color: var(--pp-muted);
+        }
+        div[data-testid="stAlert"] {
+            border-radius: 8px;
+        }
+        h1 {
+            color: var(--pp-primary-dark);
+        }
+        div[data-testid="stForm"] {
+            border-color: var(--pp-border);
+            background: rgba(252, 251, 248, 0.64);
+        }
+        .stButton > button,
+        div[data-testid="stLinkButton"] a {
+            border-radius: 8px;
+            font-weight: 650;
+        }
+        button[kind="primary"] {
+            background: var(--pp-primary);
+            border-color: var(--pp-primary);
+            color: var(--pp-surface);
+        }
+        button[kind="primary"]:hover {
+            background: var(--pp-primary-dark);
+            border-color: var(--pp-primary-dark);
+            color: var(--pp-surface);
+        }
+        div[data-testid="stLinkButton"] a {
+            border-color: var(--pp-border);
+            color: var(--pp-primary-dark);
+            background: var(--pp-surface);
+        }
+        div[data-testid="stLinkButton"] a:hover {
+            border-color: var(--pp-gold);
+            color: var(--pp-primary-dark);
+            background: rgba(200, 178, 138, 0.14);
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+def section_header(title, subtitle=None):
+    subtitle_html = (
+        f'<div class="pp-section-subtitle">{escape(subtitle)}</div>'
+        if subtitle
+        else ""
+    )
+    st.markdown(
+        f"""
+        <div class="pp-section-header">
+            <h2 class="pp-section-title">{escape(title)}</h2>
+            {subtitle_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def info_card(title, body=None):
+    body_html = f'<div class="pp-card-body">{escape(body)}</div>' if body else ""
+    st.markdown(
+        f"""
+        <div class="pp-card">
+            <div class="pp-card-title">{escape(title)}</div>
+            {body_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def status_badge(label, status="info"):
+    status_class = {
+        "success": "pp-badge-success",
+        "warning": "pp-badge-warning",
+        "danger": "pp-badge-danger",
+        "info": "pp-badge-info",
+    }.get(status, "pp-badge-info")
+    st.markdown(
+        f'<span class="pp-badge {status_class}">{escape(label)}</span>',
+        unsafe_allow_html=True,
+    )
+
+
+def muted_text(text):
+    st.markdown(f'<div class="pp-muted">{escape(text)}</div>', unsafe_allow_html=True)
+
+
+def metric_explainer(label, what_it_means, why_it_matters, good_range=None):
+    with st.expander(f"What does {label} mean?"):
+        st.markdown(f"**What it means:** {what_it_means}")
+        st.markdown(f"**Why it matters:** {why_it_matters}")
+        if good_range:
+            st.markdown(f"**Generally good:** {good_range}")
+
+
 st.title("Property Pocket")
-st.caption("Fast acquisition screen for STR / rental property underwriting.")
+muted_text("Fast acquisition screen for STR / rental property underwriting.")
 
 if "new_deal_message" in st.session_state:
     st.success(st.session_state.pop("new_deal_message"))
@@ -112,6 +318,356 @@ def pct(value):
 
 def multiple(value):
     return f"{value:.2f}x"
+
+
+PIPELINE_STATUSES = ["Analyzing", "Interested", "Offer Ready", "Under Contract", "Passed"]
+PASS_REASONS = [
+    "",
+    "Revenue too aggressive",
+    "DSCR too weak",
+    "HOA too high",
+    "Taxes / insurance too high",
+    "Overpaying risk",
+    "STR regulation concern",
+    "Better opportunities elsewhere",
+    "Other",
+]
+
+
+def normalize_pipeline_status(status):
+    status = "" if pd.isna(status) else str(status).strip()
+    legacy_map = {
+        "Review": "Analyzing",
+        "Do Not Buy": "Passed",
+        "Offer Candidate": "Offer Ready",
+        "Under Diligence": "Interested",
+        "Archived": "Passed",
+    }
+    status = legacy_map.get(status, status)
+    return status if status in PIPELINE_STATUSES else "Analyzing"
+
+
+def revenue_confidence_label(revenue_gap_pct):
+    try:
+        gap = float(revenue_gap_pct)
+    except (TypeError, ValueError):
+        return "Unknown"
+    if gap < 0.15:
+        return "High"
+    if gap <= 0.30:
+        return "Medium"
+    return "Low"
+
+
+def confidence_status(confidence):
+    return {
+        "High": "success",
+        "Medium": "warning",
+        "Low": "danger",
+    }.get(confidence, "info")
+
+
+def quality_status(quality):
+    return {
+        "STRONG": "success",
+        "FIXABLE": "warning",
+        "UNREALISTIC": "danger",
+    }.get(str(quality), "info")
+
+
+def safe_text(value, fallback=""):
+    if value is None or pd.isna(value):
+        return fallback
+    value = str(value).strip()
+    return value if value else fallback
+
+
+def safe_float(value, default=0):
+    try:
+        if value is None or pd.isna(value) or value == "":
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def search_url(query):
+    return f"https://www.google.com/search?q={quote_plus(query)}"
+
+
+def extract_location_parts(property_address, market_city):
+    location = {"city": market_city or "", "state": ""}
+    if not property_address:
+        return location
+
+    match = re.search(r",\s*([^,]+),\s*([A-Z]{2})\s+\d{5}", property_address)
+    if match:
+        location["city"] = match.group(1).strip()
+        location["state"] = match.group(2).strip()
+        return location
+
+    state_match = re.search(r"\b([A-Z]{2})\s+\d{5}\b", property_address)
+    if state_match:
+        location["state"] = state_match.group(1).strip()
+
+    return location
+
+
+def build_due_diligence_links(property_address, market_city):
+    location = extract_location_parts(property_address, market_city)
+    city_state = " ".join(
+        part for part in [location["city"], location["state"]] if part
+    )
+    property_query = property_address or city_state or "property"
+
+    return [
+        {
+            "label": "County Appraisal District",
+            "url": search_url(
+                f"{city_state} county appraisal district property search {property_query}"
+            ),
+            "note": "Find assessed value, ownership, parcel ID, and appraisal history.",
+        },
+        {
+            "label": "Property Search",
+            "url": search_url(f"{property_query} county property search"),
+            "note": "Confirm parcel details, legal description, beds/baths, and square footage.",
+        },
+        {
+            "label": "Tax Records",
+            "url": search_url(f"{property_query} property tax records county tax collector"),
+            "note": "Check current taxes, exemptions, delinquencies, and recent tax changes.",
+        },
+        {
+            "label": "Recorded Deeds",
+            "url": search_url(f"{city_state} county recorder official records deeds {property_query}"),
+            "note": "Review sale history, deed transfers, liens, and recorded documents.",
+        },
+    ]
+
+
+def market_reality_label(delta_pct, metric_name):
+    if delta_pct is None:
+        return "Add a comp", "info"
+    if delta_pct <= 0.10:
+        return f"{metric_name} looks grounded", "success"
+    if delta_pct <= 0.25:
+        return f"{metric_name} needs support", "warning"
+    return f"{metric_name} is stretched", "danger"
+
+
+def market_reality_interpretation(revenue_delta_pct, price_delta_pct):
+    if revenue_delta_pct is None and price_delta_pct is None:
+        return "Enter at least one nearby comp to pressure-test the current assumptions."
+    if revenue_delta_pct is not None and revenue_delta_pct > 0.25:
+        return "Revenue is materially above the comp. Do not rely on this assumption without strong source support."
+    if price_delta_pct is not None and price_delta_pct > 0.25:
+        return "The offer is materially above the sold comp. Confirm quality, location, and income differences before proceeding."
+    if (
+        revenue_delta_pct is not None
+        and price_delta_pct is not None
+        and revenue_delta_pct <= 0.10
+        and price_delta_pct <= 0.10
+    ):
+        return "Revenue and offer assumptions are close to the comp. This does not prove the deal, but it lowers assumption risk."
+    return "The assumptions are within a reviewable range. Validate the comp quality before treating this as offer support."
+
+
+def build_before_offer_checklist(
+    deal_tier,
+    results,
+    offer_price,
+    annual_revenue,
+    hoa_monthly,
+):
+    checklist = [
+        "Validate nearby sale comps against the current offer price.",
+        "Confirm HOA rules, city/county STR restrictions, insurance, and lender requirements.",
+    ]
+
+    revenue_gap_pct = results.get("revenue_gap_pct")
+    monthly_net = results.get("monthly_net", 0)
+    dscr = results.get("dscr", 0)
+    core_irr = results.get("core_five_year_irr")
+
+    if annual_revenue and annual_revenue > 0:
+        low_value = annual_revenue / 0.10
+        high_value = annual_revenue / 0.07
+
+        if offer_price > high_value:
+            checklist.append(
+                "Watch overpaying risk: the offer is above the implied value range from current revenue."
+            )
+        elif offer_price < low_value:
+            checklist.append(
+                "Prepare support for an aggressive below-market offer using revenue, expense, and comp data."
+            )
+        else:
+            checklist.append(
+                "Verify the offer still sits inside the implied value range after updated revenue proof."
+            )
+    else:
+        checklist.append("Add a credible annual revenue estimate before making an offer.")
+
+    if revenue_gap_pct is not None:
+        if revenue_gap_pct > 0.30:
+            checklist.append(
+                "Do not rely on upside revenue without third-party STR data, owner statements, or strong comps."
+            )
+        elif revenue_gap_pct >= 0.15:
+            checklist.append(
+                "Validate STR revenue assumptions with at least two independent sources."
+            )
+        else:
+            checklist.append(
+                "Confirm revenue quality: seasonality, fees, occupancy, and cleaning/management assumptions."
+            )
+
+    if hoa_monthly:
+        checklist.append("Confirm exactly what HOA dues include and whether special assessments are pending.")
+
+    if deal_tier == "UNREALISTIC":
+        checklist.append(
+            "Move on unless price, revenue, HOA, taxes, or insurance assumptions are materially wrong."
+        )
+    elif dscr < 1.00 or monthly_net < 0 or core_irr is None or core_irr < 0.08:
+        checklist.append(
+            "Use the solver before offering; the deal still misses at least one baseline target."
+        )
+    else:
+        checklist.append(
+            "If diligence confirms the assumptions, this can move into offer terms and negotiation posture."
+        )
+
+    return checklist
+
+
+def build_risk_flags(
+    deal_tier,
+    results,
+    ask_price,
+    offer_price,
+    annual_revenue,
+    hoa_monthly,
+    taxes_insurance_monthly,
+):
+    flags = []
+    revenue_gap_pct = results.get("revenue_gap_pct")
+    monthly_net = results.get("monthly_net", 0)
+    dscr = results.get("dscr", 0)
+    core_irr = results.get("core_five_year_irr")
+    monthly_revenue = annual_revenue / 12 if annual_revenue else 0
+
+    if deal_tier == "UNREALISTIC":
+        flags.append(
+            {
+                "level": "high",
+                "title": "Unrealistic deal",
+                "detail": "Baseline targets are too far away. Move on unless a core assumption is wrong.",
+            }
+        )
+
+    if monthly_net < 0:
+        flags.append(
+            {
+                "level": "high",
+                "title": "Negative monthly net",
+                "detail": f"Current underwriting is short by {dollars_month(abs(monthly_net))}.",
+            }
+        )
+
+    if dscr < 1.00:
+        flags.append(
+            {
+                "level": "high" if dscr < 0.70 else "medium",
+                "title": "DSCR below target",
+                "detail": f"DSCR is {dscr:.2f}; debt coverage needs improvement before offer confidence is high.",
+            }
+        )
+
+    if core_irr is None or core_irr < 0:
+        flags.append(
+            {
+                "level": "high",
+                "title": "Core return risk",
+                "detail": "Core 5-year IRR is negative or unavailable before tax strategy.",
+            }
+        )
+    elif core_irr < 0.08:
+        flags.append(
+            {
+                "level": "medium",
+                "title": "Weak core IRR",
+                "detail": f"Core 5-year IRR is {pct(core_irr)}, below the 8.0% baseline.",
+            }
+        )
+
+    if revenue_gap_pct is not None:
+        if revenue_gap_pct > 0.30:
+            flags.append(
+                {
+                    "level": "high",
+                    "title": "Low revenue confidence",
+                    "detail": f"Revenue gap is {revenue_gap_pct:.1%}; upside needs strong proof.",
+                }
+            )
+        elif revenue_gap_pct >= 0.15:
+            flags.append(
+                {
+                    "level": "medium",
+                    "title": "Medium revenue confidence",
+                    "detail": f"Revenue gap is {revenue_gap_pct:.1%}; validate assumptions before offering.",
+                }
+            )
+
+    if annual_revenue and annual_revenue > 0:
+        low_value = annual_revenue / 0.10
+        high_value = annual_revenue / 0.07
+        if offer_price > high_value:
+            flags.append(
+                {
+                    "level": "high",
+                    "title": "Overpaying risk",
+                    "detail": f"Offer is above the implied value range of {dollars(low_value)} to {dollars(high_value)}.",
+                }
+            )
+        elif offer_price > (low_value + (high_value - low_value) * 0.75):
+            flags.append(
+                {
+                    "level": "medium",
+                    "title": "Thin offer cushion",
+                    "detail": "Offer is near the top of the revenue-implied value range.",
+                }
+            )
+
+    if ask_price and offer_price >= ask_price * 0.98 and (dscr < 1.00 or monthly_net < 0):
+        flags.append(
+            {
+                "level": "medium",
+                "title": "Little negotiation cushion",
+                "detail": "Current offer is close to ask while the deal still misses baseline targets.",
+            }
+        )
+
+    if monthly_revenue:
+        if hoa_monthly / monthly_revenue > 0.25:
+            flags.append(
+                {
+                    "level": "medium",
+                    "title": "High HOA burden",
+                    "detail": "HOA is more than 25% of monthly revenue.",
+                }
+            )
+        if taxes_insurance_monthly / monthly_revenue > 0.20:
+            flags.append(
+                {
+                    "level": "medium",
+                    "title": "High taxes / insurance burden",
+                    "detail": "Taxes and insurance are more than 20% of monthly revenue.",
+                }
+            )
+
+    return flags
 
 
 def parse_listing_text(text):
@@ -234,6 +790,7 @@ if st.session_state.get("pending_start_new_deal"):
         st.session_state[_k] = _v
     st.session_state.pop("last_analyzed_deal", None)
     st.session_state.pop("solver_results", None)
+    st.session_state.pop("max_offer_result", None)
     st.session_state.pop("loaded_saved_at", None)
     st.session_state.pop("pending_start_new_deal", None)
     st.session_state["new_deal_message"] = "New deal started."
@@ -247,7 +804,19 @@ if "pending_apply_scenario" in st.session_state:
     st.session_state["taxes_insurance_monthly"] = _pending["taxes_insurance_monthly"]
     st.session_state.pop("last_analyzed_deal", None)
     st.session_state.pop("solver_results", None)
+    st.session_state.pop("max_offer_result", None)
     st.info("Scenario applied. Review updated inputs, then tap Analyze Deal.")
+
+# --- Pending saved deal load (must run before any widgets with these keys are created) ---
+if "pending_load_saved_deal" in st.session_state:
+    _pending = st.session_state.pop("pending_load_saved_deal")
+    for _key, _value in _pending.get("values", {}).items():
+        st.session_state[_key] = _value
+    st.session_state["loaded_saved_at"] = _pending.get("saved_at", "")
+    st.session_state.pop("last_analyzed_deal", None)
+    st.session_state.pop("solver_results", None)
+    st.session_state.pop("max_offer_result", None)
+    st.info("Saved deal loaded. Review inputs, then tap Analyze Deal.")
 
 listing_text = st.text_area(
     "Paste Zillow URL or listing text",
@@ -285,8 +854,8 @@ with col_new:
 st.divider()
 
 with st.form("property_form"):
-    st.subheader("Quick Deal Inputs")
-    st.caption(
+    section_header("Quick Deal Inputs")
+    muted_text(
         "The key deal drivers. Ask price, HOA, and taxes can load from listing text; income usually needs Zillow, AirDNA, Rabbu, actuals, or owner data."
     )
 
@@ -305,7 +874,7 @@ with st.form("property_form"):
     )
 
     with st.expander("Property Details", expanded=False):
-        st.caption("Loads automatically from listing text where available.")
+        muted_text("Loads automatically from listing text where available.")
         pcol1, pcol2 = st.columns(2)
         with pcol1:
             property_address = st.text_input("Property Address", key="property_address")
@@ -535,21 +1104,21 @@ if _deal:
 
     verdict_label = verdict.get("verdict", "REVIEW")
 
-    st.subheader("Deal Decision")
+    section_header("Deal Decision", "Read this first, then inspect the risks and offer path.")
 
     if _deal_tier == "STRONG":
-        st.success("🟢 STRONG DEAL")
+        status_badge("STRONG DEAL", "success")
         summary = "This deal clears your baseline targets. Focus on whether it can become excellent."
     elif _deal_tier == "FIXABLE":
-        st.warning("🟡 CLOSE / FIXABLE")
+        status_badge("CLOSE / FIXABLE", "warning")
         summary = "This deal is close enough to test reasonable what-if scenarios before deciding."
     else:
-        st.error("🔴 UNREALISTIC")
+        status_badge("UNREALISTIC", "danger")
         summary = "This deal is too far from your baseline targets. Move on unless assumptions are materially wrong."
 
-    st.info(summary)
+    muted_text(summary)
 
-    st.subheader("Deal Snapshot")
+    section_header("Deal Snapshot", "Core underwriting outputs for offer confidence.")
 
     ds1, ds2 = st.columns(2)
     ds1.metric("Monthly Net", dollars_month(results["monthly_net"]))
@@ -567,6 +1136,65 @@ if _deal:
         "Tax-Enhanced IRR",
         pct(results["five_year_irr"]) if results["five_year_irr"] is not None else "N/A",
     )
+
+    st.markdown("**Metric Explainers**")
+    metric_explainer(
+        "Monthly Net",
+        "Estimated monthly cash flow after mortgage, HOA, taxes, insurance, utilities, and operating costs.",
+        "It shows whether the property is likely to help or hurt monthly household cash flow.",
+        "$0+/mo is baseline; $500+/mo is stronger.",
+    )
+    metric_explainer(
+        "DSCR",
+        "Debt service coverage ratio: income available to cover loan payments.",
+        "Lenders and investors use it to judge whether the deal can safely support its debt.",
+        "1.00x+ covers debt; 1.20x+ gives more cushion.",
+    )
+    metric_explainer(
+        "Core 5-Year IRR",
+        "Estimated five-year return before tax strategy benefits.",
+        "It helps separate the actual deal quality from tax-driven upside.",
+        "8%+ is acceptable; 15%+ is strong.",
+    )
+    metric_explainer(
+        "Revenue Gap",
+        "Extra annual revenue needed to hit the target DSCR.",
+        "It shows how much the income assumption must improve before the deal feels safer.",
+        "$0 means revenue already clears the target.",
+    )
+
+    st.markdown("**Before You Offer**")
+    _before_offer_items = build_before_offer_checklist(
+        _deal_tier,
+        results,
+        _offer_price,
+        _prior_year_annual_income,
+        _hoa_monthly,
+    )
+    for _item in _before_offer_items:
+        st.markdown(f"- [ ] {_item}")
+
+    st.markdown("**Risk Flags**")
+    _risk_flags = build_risk_flags(
+        _deal_tier,
+        results,
+        _ask_price,
+        _offer_price,
+        _prior_year_annual_income,
+        _hoa_monthly,
+        _taxes_insurance_monthly,
+    )
+    if _risk_flags:
+        for _flag in _risk_flags:
+            _message = f"**{_flag['title']}** - {_flag['detail']}"
+            if _flag["level"] == "high":
+                st.error(_message)
+            elif _flag["level"] == "medium":
+                st.warning(_message)
+            else:
+                st.info(_message)
+    else:
+        st.success("No major underwriting risk flags from the current inputs.")
 
     if st.session_state.get("_solver_tier_applied") != _deal_tier:
         st.session_state["solver_tgt_dscr"] = _tier_dscr_default
@@ -637,7 +1265,6 @@ if _deal:
                 key="solver_levers",
             )
 
-        if _deal_tier != "UNREALISTIC" and st.button("Run Deal Solver", use_container_width=True, type="primary", key="run_solver_btn"):
             _ss = st.session_state
 
             _base_kwargs = dict(
@@ -711,6 +1338,71 @@ if _deal:
                     return False
                 return True
 
+            st.markdown("**Max Offer Price**")
+            if st.button("Find Max Offer", use_container_width=True, key="find_max_offer_btn"):
+                _max_offer_result = None
+                _max_offer_start = int(_ask_price)
+                _max_offer_floor = int(_ask_price * 0.70)
+                _max_offer_vals = list(range(_max_offer_start, _max_offer_floor - 1, -5000))
+                if _max_offer_floor not in _max_offer_vals:
+                    _max_offer_vals.append(_max_offer_floor)
+
+                for _test_offer in _max_offer_vals:
+                    _test_results = calculate(
+                        PropertyInputs(
+                            **{
+                                **_base_kwargs,
+                                "offer_price": _test_offer,
+                            }
+                        )
+                    )
+                    if _meets_targets(_test_results):
+                        _max_offer_result = {
+                            "offer_price": _test_offer,
+                            "prior_year_annual_income": _prior_year_annual_income,
+                            "hoa_monthly": _hoa_monthly,
+                            "taxes_insurance_monthly": _taxes_insurance_monthly,
+                            "monthly_net": _test_results["monthly_net"],
+                            "dscr": _test_results["dscr"],
+                            "core_five_year_irr": _test_results["core_five_year_irr"],
+                            "coc": _test_results.get("coc"),
+                            "equity_multiple": _test_results.get("equity_multiple"),
+                        }
+                        break
+
+                st.session_state["max_offer_result"] = _max_offer_result
+
+            _max_offer_result = st.session_state.get("max_offer_result")
+            if _max_offer_result:
+                _max_delta = _max_offer_result["offer_price"] - _offer_price
+                st.success(f"Max offer that hits selected targets: {dollars(_max_offer_result['offer_price'])}")
+                _mo1, _mo2 = st.columns(2)
+                _mo1.metric("Room vs Current Offer", dollars(_max_delta))
+                _mo2.metric("DSCR", f"{_max_offer_result['dscr']:.2f}")
+                _mo3, _mo4 = st.columns(2)
+                _mo3.metric(
+                    "Monthly Net",
+                    dollars_month(_max_offer_result["monthly_net"]),
+                )
+                _mo4.metric(
+                    "Core IRR",
+                    pct(_max_offer_result["core_five_year_irr"])
+                    if _max_offer_result["core_five_year_irr"] is not None
+                    else "N/A",
+                )
+
+                if st.button("Apply Max Offer", use_container_width=True, key="apply_max_offer_btn"):
+                    st.session_state["pending_apply_scenario"] = {
+                        "offer_price": float(_max_offer_result["offer_price"]),
+                        "prior_year_annual_income": float(_max_offer_result["prior_year_annual_income"]),
+                        "hoa_monthly": float(_max_offer_result["hoa_monthly"]),
+                        "taxes_insurance_monthly": float(_max_offer_result["taxes_insurance_monthly"]),
+                    }
+                    st.rerun()
+            elif _max_offer_result is None and "max_offer_result" in st.session_state:
+                st.error("No offer price from ask down to 70% of ask hits the selected targets.")
+
+        if _deal_tier != "UNREALISTIC" and st.button("Run Deal Solver", use_container_width=True, type="primary", key="run_solver_btn"):
             _found = []
             for _op in _offer_vals:
                 for _rv in _rev_vals:
@@ -723,6 +1415,17 @@ if _deal:
                                 "taxes_insurance_monthly": _tx,
                             }))
                             if _meets_targets(_r):
+                                _price_chg_pct = (_offer_price - _op) / _offer_price if _offer_price else 0
+                                _rev_chg_pct = (_rv - _prior_year_annual_income) / _prior_year_annual_income if _prior_year_annual_income else 0
+                                _lever_count = sum(
+                                    [
+                                        _op != _offer_price,
+                                        _rv != _prior_year_annual_income,
+                                        _hoa != _hoa_monthly,
+                                        _tx != _taxes_insurance_monthly,
+                                    ]
+                                )
+                                _heavy_lift = _price_chg_pct > 0.20 or _rev_chg_pct > 0.30
                                 _delta = (
                                     abs(_offer_price - _op)
                                     + abs(_rv - _prior_year_annual_income) * 10
@@ -739,6 +1442,8 @@ if _deal:
                                     "core_five_year_irr": _r["core_five_year_irr"],
                                     "coc": _r.get("coc"),
                                     "equity_multiple": _r.get("equity_multiple"),
+                                    "_lever_count": _lever_count,
+                                    "_heavy_lift": _heavy_lift,
                                     "_delta": _delta,
                                 })
 
@@ -751,14 +1456,24 @@ if _deal:
                     "gap_pct": results.get("revenue_gap_pct", 0),
                 }
             else:
-                _found.sort(key=lambda x: x["_delta"])
+                _found.sort(
+                    key=lambda x: (
+                        x["_heavy_lift"],
+                        max(x["_lever_count"], 1),
+                        x["_delta"],
+                    )
+                )
                 st.session_state["solver_results"] = _found[:5]
                 st.session_state["solver_base_offer"] = _offer_price
                 st.session_state["solver_base_revenue"] = _prior_year_annual_income
                 st.session_state["solver_base_hoa"] = _hoa_monthly
                 st.session_state["solver_base_tax"] = _taxes_insurance_monthly
 
-        _solver_top5 = st.session_state.get("solver_results")
+        _solver_top5 = (
+            st.session_state.get("solver_results")
+            if _deal_tier != "UNREALISTIC"
+            else None
+        )
 
         if _solver_top5 is not None:
             if not _solver_top5:
@@ -783,7 +1498,7 @@ if _deal:
                     st.info("Recommendation: Try adding another lever or slightly loosening investor targets.")
 
                 if "Lower Offer Price" in _levers and "Increase Annual Revenue" not in _levers:
-                    st.caption("🧠 Deal Driver Insight: Lowering the price alone does not appear to solve this deal within your selected limits.")
+                    st.caption("Deal Driver Insight: Lowering the price alone does not appear to solve this deal within your selected limits.")
             else:
                 _sb_offer = st.session_state.get("solver_base_offer", _offer_price)
                 _sb_rev = st.session_state.get("solver_base_revenue", _prior_year_annual_income)
@@ -799,14 +1514,14 @@ if _deal:
 
                 if _both_levers:
                     if _s1_price_dropped and _s1_rev_increased:
-                        _insight = "🧠 Deal Driver Insight: This is a dual-lever deal. It likely needs both a better purchase price and stronger revenue to hit your targets."
+                        _insight = "Deal Driver Insight: This is a dual-lever deal. It likely needs both a better purchase price and stronger revenue to hit your targets."
                     elif _s1_rev_increased:
-                        _insight = "🧠 Deal Driver Insight: This is primarily a revenue-driven deal. Better revenue performance is doing most of the work."
+                        _insight = "Deal Driver Insight: This is primarily a revenue-driven deal. Better revenue performance is doing most of the work."
                     else:
-                        _insight = "🧠 Deal Driver Insight: This is primarily a price-driven deal. The deal works mainly by buying it at a lower basis."
+                        _insight = "Deal Driver Insight: This is primarily a price-driven deal. The deal works mainly by buying it at a lower basis."
                     st.caption(_insight)
                 elif _rev_only:
-                    st.caption("🧠 Deal Driver Insight: Revenue alone can make this deal work, but validate the income assumption carefully.")
+                    st.caption("Deal Driver Insight: Revenue alone can make this deal work, but validate the income assumption carefully.")
 
                 for _i, _s in enumerate(_solver_top5, 1):
                     _price_chg_pct = (_sb_offer - _s["offer_price"]) / _sb_offer if _sb_offer else 0
@@ -815,38 +1530,33 @@ if _deal:
                     if _price_chg_pct <= 0.10 and _rev_chg_pct <= 0.15:
                         _realism = "High"
                         _effort = "Easy Fix"
-                        _realism_color = "🟢"
                     elif _price_chg_pct <= 0.20 and _rev_chg_pct <= 0.30:
                         _realism = "Medium"
                         _effort = "Moderate Fix"
-                        _realism_color = "🟡"
                     else:
                         _realism = "Low"
                         _effort = "Heavy Lift"
-                        _realism_color = "🔴"
 
-                    _header = f"**Scenario #{_i}**" + ("  ⭐ Top Pick" if _i == 1 else "")
+                    _header = f"**Scenario #{_i}**" + (" - Top Pick" if _i == 1 else "")
                     st.markdown(_header)
-                    st.caption(
-                        f"Offer: **{dollars(_s['offer_price'])}**  |  Revenue: **{dollars(_s['prior_year_annual_income'])}**"
-                    )
+                    st.caption(f"Offer: {dollars(_s['offer_price'])} | Revenue: {dollars(_s['prior_year_annual_income'])}")
 
                     _changes = []
                     _price_diff = _sb_offer - _s["offer_price"]
                     if _price_diff != 0:
-                        _changes.append(f"Price: {dollars(_s['offer_price'])} (−{dollars(_price_diff)})")
+                        _changes.append(f"Price: {dollars(_s['offer_price'])} (-{dollars(_price_diff)})")
                     _rev_diff = _s["prior_year_annual_income"] - _sb_rev
                     if _rev_diff != 0:
                         _changes.append(f"Revenue: {dollars(_s['prior_year_annual_income'])} (+{dollars(_rev_diff)})")
                     _hoa_diff = _sb_hoa - _s["hoa_monthly"]
                     if _hoa_diff != 0:
-                        _changes.append(f"HOA: {dollars(_s['hoa_monthly'])}/mo (−{dollars(_hoa_diff)})")
+                        _changes.append(f"HOA: {dollars(_s['hoa_monthly'])}/mo (-{dollars(_hoa_diff)})")
                     _tax_diff = _sb_tax - _s["taxes_insurance_monthly"]
                     if _tax_diff != 0:
-                        _changes.append(f"Taxes/Ins: {dollars(_s['taxes_insurance_monthly'])}/mo (−{dollars(_tax_diff)})")
+                        _changes.append(f"Taxes/Ins: {dollars(_s['taxes_insurance_monthly'])}/mo (-{dollars(_tax_diff)})")
 
                     if _changes:
-                        st.markdown("*What Changed:* " + "  ·  ".join(_changes))
+                        st.markdown("*What Changed:* " + " | ".join(_changes))
 
                     _mc1, _mc2 = st.columns(2)
                     _mc1.metric("Monthly Net", dollars(_s["monthly_net"]))
@@ -856,7 +1566,7 @@ if _deal:
                     _mc4.metric("Cash-on-Cash", pct(_s["coc"]) if _s["coc"] is not None else "N/A")
                     _mc5, _mc6 = st.columns(2)
                     _mc5.metric("Eq. Multiple", f"{_s['equity_multiple']:.2f}" if _s["equity_multiple"] is not None else "N/A")
-                    _mc6.metric("Realism", f"{_realism_color} {_realism}  ·  {_effort}")
+                    _mc6.metric("Realism", f"{_realism} | {_effort}")
 
                     _hard_lines = []
                     if _rev_chg_pct > 0.30:
@@ -864,7 +1574,7 @@ if _deal:
                     if _price_chg_pct > 0.20:
                         _hard_lines.append("Requires a significant price discount below current offer.")
                     if _hard_lines:
-                        st.caption("⚠️ " + "  ·  ".join(_hard_lines))
+                        st.caption("Caution: " + " | ".join(_hard_lines))
 
                     _apply_s = _s
                     if st.button(f"Apply Scenario #{_i}", key=f"apply_scenario_{_i}", use_container_width=True):
@@ -896,13 +1606,119 @@ if _deal:
                         })
                     st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
 
+    section_header(
+        "Market Reality Check",
+        "Manual comp pressure test for revenue and offer assumptions.",
+    )
+    with st.expander("Enter Nearby Comp", expanded=False):
+        _comp_col1, _comp_col2 = st.columns(2)
+        with _comp_col1:
+            _comp_revenue = st.number_input(
+                "Nearby Comp Annual Revenue ($)",
+                min_value=0.0,
+                step=1000.0,
+                key="market_comp_annual_revenue",
+            )
+            _comp_sold_price = st.number_input(
+                "Nearby Comp Sold Price ($)",
+                min_value=0.0,
+                step=5000.0,
+                key="market_comp_sold_price",
+            )
+        with _comp_col2:
+            _comp_nightly_rate = st.number_input(
+                "Nearby Comp Nightly Rate ($)",
+                min_value=0.0,
+                step=25.0,
+                key="market_comp_nightly_rate",
+            )
+            _comp_occupancy_pct = st.number_input(
+                "Nearby Comp Occupancy %",
+                min_value=0.0,
+                max_value=100.0,
+                step=1.0,
+                key="market_comp_occupancy_pct",
+            )
+        _comp_notes = st.text_area(
+            "Notes / Source",
+            placeholder="AirDNA, Rabbu, owner actuals, MLS sale, county records...",
+            height=80,
+            key="market_comp_notes",
+        )
+
+    _revenue_delta_pct = (
+        (_prior_year_annual_income - _comp_revenue) / _comp_revenue
+        if _comp_revenue
+        else None
+    )
+    _price_delta_pct = (
+        (_offer_price - _comp_sold_price) / _comp_sold_price
+        if _comp_sold_price
+        else None
+    )
+    _revenue_label, _revenue_status = market_reality_label(
+        abs(_revenue_delta_pct) if _revenue_delta_pct is not None else None,
+        "Revenue",
+    )
+    _offer_label, _offer_status = market_reality_label(
+        abs(_price_delta_pct) if _price_delta_pct is not None else None,
+        "Offer",
+    )
+
+    _mr1, _mr2 = st.columns(2)
+    _mr1.metric(
+        "Revenue Premium / Discount",
+        f"{_revenue_delta_pct:+.1%}" if _revenue_delta_pct is not None else "Add comp",
+    )
+    _mr2.metric(
+        "Price Premium / Discount",
+        f"{_price_delta_pct:+.1%}" if _price_delta_pct is not None else "Add comp",
+    )
+
+    _rl, _ol = st.columns(2)
+    with _rl:
+        status_badge(_revenue_label, _revenue_status)
+    with _ol:
+        status_badge(_offer_label, _offer_status)
+
+    info_card(
+        "Reality Check",
+        market_reality_interpretation(
+            abs(_revenue_delta_pct) if _revenue_delta_pct is not None else None,
+            abs(_price_delta_pct) if _price_delta_pct is not None else None,
+        ),
+    )
+    if _comp_nightly_rate or _comp_occupancy_pct or _comp_notes:
+        muted_text(
+            "Use nightly rate, occupancy, and source notes to judge whether this comp is actually comparable."
+        )
+
+    section_header(
+        "Verify Before Offer",
+        "Fast research access only. Confirm county records manually before submitting an offer.",
+    )
+
+    _diligence_links = build_due_diligence_links(_property_address, _market_city)
+    for _idx in range(0, len(_diligence_links), 2):
+        _cols = st.columns(2)
+        for _col, _item in zip(_cols, _diligence_links[_idx:_idx + 2]):
+            with _col:
+                st.link_button(_item["label"], _item["url"], use_container_width=True)
+                muted_text(_item["note"])
+
+    with st.expander("STR Regulation Lookup (later)", expanded=False):
+        muted_text(
+            "Future workflow: open city/county STR rules, permit requirements, zoning limits, "
+            "occupancy rules, and HOA rental restrictions from one place."
+        )
+
     _status_defaults = {
-        "BUY": "Offer Candidate",
-        "REVIEW": "Review",
-        "DO NOT BUY": "Do Not Buy",
+        "BUY": "Offer Ready",
+        "REVIEW": "Analyzing",
+        "DO NOT BUY": "Passed",
     }
-    _status_options = ["Review", "Do Not Buy", "Offer Candidate", "Under Diligence", "Archived"]
-    _default_status = _status_defaults.get(verdict_label, "Review")
+    _status_options = PIPELINE_STATUSES
+    _default_status = _status_defaults.get(verdict_label, "Analyzing")
     _default_status_idx = _status_options.index(_default_status) if _default_status in _status_options else 0
 
     deal_status = st.selectbox(
@@ -912,9 +1728,17 @@ if _deal:
         key="deal_status_input",
     )
 
+    pass_reason = ""
+    if deal_status == "Passed":
+        pass_reason = st.selectbox(
+            "Why I Passed",
+            options=PASS_REASONS,
+            key="pass_reason_input",
+        )
+
     deal_notes = st.text_area(
         "Deal Notes",
-        placeholder="Location thoughts, inspection flags, seller motivation, comps…",
+        placeholder="Location thoughts, inspection flags, seller motivation, comps...",
         height=100,
         key="deal_notes_input",
     )
@@ -933,6 +1757,13 @@ if _deal:
         "square_feet": _square_feet,
         "deal_status": st.session_state.get("deal_status_input", ""),
         "deal_quality": _deal_tier,
+        "revenue_confidence": revenue_confidence_label(results.get("revenue_gap_pct")),
+        "max_offer": (
+            st.session_state.get("max_offer_result", {}).get("offer_price", "")
+            if isinstance(st.session_state.get("max_offer_result"), dict)
+            else ""
+        ),
+        "pass_reason": pass_reason,
         "verdict": verdict.get("verdict", ""),
         "monthly_net": results["monthly_net"],
         "dscr": results["dscr"],
@@ -980,7 +1811,7 @@ if _deal:
 
     st.divider()
 
-    st.subheader("Property Snapshot")
+    section_header("Property Snapshot")
 
     p1, p2, p3, p4 = st.columns(4)
     p1.metric("Bedrooms", f"{_bedrooms:g}")
@@ -991,11 +1822,11 @@ if _deal:
     )
 
     if _property_address:
-        st.caption(f"Address: {_property_address}")
+        muted_text(f"Address: {_property_address}")
 
     st.divider()
 
-    st.subheader("Investor Snapshot")
+    section_header("Investor Snapshot")
 
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Offer Price", dollars(results["current_market_value"]))
@@ -1011,7 +1842,7 @@ if _deal:
 
     st.divider()
 
-    st.subheader("Return Profile")
+    section_header("Return Profile")
 
     r1, r2, r3, r4 = st.columns(4)
     r1.metric(
@@ -1033,7 +1864,7 @@ if _deal:
 
     st.divider()
 
-    st.subheader("Tax Strategy")
+    section_header("Tax Strategy")
 
     t1, t2, t3, t4 = st.columns(4)
     t1.metric("Depreciable Basis", dollars(results["depreciable_basis"]))
@@ -1043,7 +1874,7 @@ if _deal:
 
     st.divider()
 
-    st.subheader("Cash Flow by Buydown Year")
+    section_header("Cash Flow by Buydown Year")
 
     cash_flow_table = pd.DataFrame(
         [
@@ -1063,7 +1894,7 @@ if _deal:
 
     st.divider()
 
-    st.subheader("Scenario Comparison")
+    section_header("Scenario Comparison")
 
     scenario_rows = []
     for name, scenario_results in scenarios.items():
@@ -1107,7 +1938,153 @@ with st.expander("Saved Deals", expanded=False):
     elif saved is None:
         st.caption("No deals saved yet. Analyze a deal and click Save Deal.")
     else:
-        _status_filter_options = ["All", "Review", "Do Not Buy", "Offer Candidate", "Under Diligence", "Archived"]
+        _pipeline_view = saved.copy()
+        _pipeline_view["deal_status"] = _pipeline_view["deal_status"].apply(normalize_pipeline_status)
+        _pipeline_view["deal_quality"] = _pipeline_view["deal_quality"].apply(lambda v: safe_text(v, "Unknown"))
+        _pipeline_view["revenue_confidence"] = _pipeline_view.apply(
+            lambda row: safe_text(
+                row.get("revenue_confidence"),
+                revenue_confidence_label(row.get("revenue_gap_pct")),
+            ),
+            axis=1,
+        )
+
+        section_header("Acquisition Pipeline", "Saved opportunities by status, quality, and revenue confidence.")
+        _filter_col1, _filter_col2, _filter_col3 = st.columns(3)
+        with _filter_col1:
+            _pipeline_status_filter = st.selectbox(
+                "Deal Status",
+                options=["All"] + PIPELINE_STATUSES,
+                key="pipeline_status_filter",
+            )
+        with _filter_col2:
+            _quality_options = ["All"] + sorted(
+                [q for q in _pipeline_view["deal_quality"].dropna().unique().tolist() if q]
+            )
+            _pipeline_quality_filter = st.selectbox(
+                "Deal Quality",
+                options=_quality_options,
+                key="pipeline_quality_filter",
+            )
+        with _filter_col3:
+            _pipeline_confidence_filter = st.selectbox(
+                "Revenue Confidence",
+                options=["All", "High", "Medium", "Low", "Unknown"],
+                key="pipeline_confidence_filter",
+            )
+
+        _cards = _pipeline_view.copy()
+        if _pipeline_status_filter != "All":
+            _cards = _cards[_cards["deal_status"] == _pipeline_status_filter]
+        if _pipeline_quality_filter != "All":
+            _cards = _cards[_cards["deal_quality"] == _pipeline_quality_filter]
+        if _pipeline_confidence_filter != "All":
+            _cards = _cards[_cards["revenue_confidence"] == _pipeline_confidence_filter]
+
+        if _cards.empty:
+            muted_text("No saved deals match these filters.")
+        else:
+            muted_text(f"{len(_cards)} saved deal{'s' if len(_cards) != 1 else ''} in this view.")
+
+            def _pending_values_from_saved_row(row):
+                _loadable = {
+                    "property_address": "property_address",
+                    "market_city": "market_city",
+                    "listing_url": "listing_url",
+                    "bedrooms": "bedrooms",
+                    "bathrooms": "bathrooms",
+                    "square_feet": "square_feet",
+                    "prior_year_annual_income": "prior_year_annual_income",
+                    "hoa_monthly": "hoa_monthly",
+                    "taxes_insurance_monthly": "taxes_insurance_monthly",
+                    "utilities_monthly": "utilities_monthly",
+                    "ask_price": "ask_price",
+                    "offer_price": "offer_price",
+                }
+                _numeric = {
+                    "bedrooms", "bathrooms", "square_feet", "prior_year_annual_income",
+                    "hoa_monthly", "taxes_insurance_monthly", "utilities_monthly",
+                    "ask_price", "offer_price",
+                }
+                _values = {}
+                for state_key, csv_col in _loadable.items():
+                    if csv_col not in row.index:
+                        continue
+                    if state_key in _numeric:
+                        _values[state_key] = safe_float(row[csv_col], default_values.get(state_key, 0))
+                    else:
+                        _values[state_key] = safe_text(row[csv_col])
+                return _values
+
+            for _card_idx, (_, _row) in enumerate(_cards.iterrows(), 1):
+                _address = safe_text(_row.get("property_address"))
+                _listing_url = safe_text(_row.get("listing_url"))
+                _title = _address or _listing_url or f"Saved deal {_card_idx}"
+                _status = normalize_pipeline_status(_row.get("deal_status"))
+                _quality = safe_text(_row.get("deal_quality"), "Unknown")
+                _confidence = safe_text(_row.get("revenue_confidence"), "Unknown")
+                _saved_at = safe_text(_row.get("updated_at")) or safe_text(_row.get("saved_at"), "Unknown")
+                _max_offer = safe_float(_row.get("max_offer"), 0)
+                _pass_reason = safe_text(_row.get("pass_reason"))
+
+                info_card(_title, f"Last saved / updated: {_saved_at}")
+                _b1, _b2, _b3 = st.columns(3)
+                with _b1:
+                    status_badge(_status, "danger" if _status == "Passed" else "info")
+                with _b2:
+                    status_badge(_quality, quality_status(_quality))
+                with _b3:
+                    status_badge(f"Revenue {_confidence}", confidence_status(_confidence))
+
+                _m1, _m2 = st.columns(2)
+                _m1.metric("Offer Price", dollars(safe_float(_row.get("offer_price"), 0)))
+                _m2.metric("Max Offer", dollars(_max_offer) if _max_offer else "Not saved")
+                _m3, _m4 = st.columns(2)
+                _m3.metric("Monthly Net", dollars_month(safe_float(_row.get("monthly_net"), 0)))
+                _m4.metric("DSCR", f"{safe_float(_row.get('dscr'), 0):.2f}")
+                _m5, _ = st.columns(2)
+                _core_irr = safe_float(_row.get("core_five_year_irr"), None)
+                _m5.metric("Core IRR", pct(_core_irr) if _core_irr is not None else "N/A")
+
+                if _status == "Passed" and _pass_reason:
+                    muted_text(f"Why I passed: {_pass_reason}")
+
+                _action1, _action2 = st.columns(2)
+                with _action1:
+                    if _listing_url:
+                        st.link_button("Open Listing", _listing_url, use_container_width=True)
+                with _action2:
+                    if st.button("Load Deal", key=f"load_saved_card_{_card_idx}", use_container_width=True):
+                        st.session_state["pending_load_saved_deal"] = {
+                            "values": _pending_values_from_saved_row(_row),
+                            "saved_at": safe_text(_row.get("saved_at")),
+                        }
+                        st.rerun()
+
+                if _card_idx < len(_cards):
+                    st.divider()
+
+        with st.expander("Saved Deals Table", expanded=False):
+            _display_cols = [
+                "saved_at", "updated_at", "deal_status", "deal_quality",
+                "revenue_confidence", "pass_reason", "property_address", "listing_url",
+                "offer_price", "max_offer", "monthly_net", "dscr",
+                "core_five_year_irr", "deal_notes",
+            ]
+            _visible_cols = [c for c in _display_cols if c in _pipeline_view.columns]
+            _table_view = _pipeline_view[_visible_cols].copy()
+            _col_config = {}
+            if "listing_url" in _table_view.columns:
+                _col_config["listing_url"] = st.column_config.LinkColumn(
+                    "Listing",
+                    display_text="Open Listing",
+                )
+            st.dataframe(_table_view, use_container_width=True, hide_index=True, column_config=_col_config)
+
+        st.divider()
+        muted_text("Legacy saved-deal loader")
+
+        _status_filter_options = ["All"] + PIPELINE_STATUSES
         _status_filter = st.selectbox("Filter by Deal Status", options=_status_filter_options, key="saved_deals_filter")
 
         _display_cols = [
@@ -1117,6 +2094,8 @@ with st.expander("Saved Deals", expanded=False):
         ]
         _visible_cols = [c for c in _display_cols if c in saved.columns]
         _view = saved[_visible_cols].copy()
+        if "deal_status" in _view.columns:
+            _view["deal_status"] = _view["deal_status"].apply(normalize_pipeline_status)
 
         if _status_filter != "All":
             _view = _view[_view["deal_status"] == _status_filter]
@@ -1154,6 +2133,7 @@ with st.expander("Saved Deals", expanded=False):
 
             _full_saved = load_saved_deals()
             if _full_saved is not None and not (isinstance(_full_saved, str) and _full_saved == "malformed"):
+                _full_saved["deal_status"] = _full_saved["deal_status"].apply(normalize_pipeline_status)
                 if _status_filter != "All":
                     _full_filtered = _full_saved[_full_saved["deal_status"] == _status_filter].reset_index(drop=True)
                 else:
@@ -1171,40 +2151,8 @@ with st.expander("Saved Deals", expanded=False):
 
                     if st.button("Load Selected Deal", use_container_width=True):
                         _load_row = _full_filtered.iloc[_selected_idx]
-                        _loadable = {
-                            "property_address": "property_address",
-                            "market_city": "market_city",
-                            "listing_url": "listing_url",
-                            "bedrooms": "bedrooms",
-                            "bathrooms": "bathrooms",
-                            "square_feet": "square_feet",
-                            "prior_year_annual_income": "prior_year_annual_income",
-                            "hoa_monthly": "hoa_monthly",
-                            "taxes_insurance_monthly": "taxes_insurance_monthly",
-                            "utilities_monthly": "utilities_monthly",
+                        st.session_state["pending_load_saved_deal"] = {
+                            "values": _pending_values_from_saved_row(_load_row),
+                            "saved_at": safe_text(_load_row.get("saved_at")),
                         }
-                        _numeric = {"bedrooms", "bathrooms", "square_feet",
-                                    "prior_year_annual_income", "hoa_monthly",
-                                    "taxes_insurance_monthly", "utilities_monthly",
-                                    "ask_price", "offer_price"}
-                        for state_key, csv_col in _loadable.items():
-                            if csv_col in _load_row.index:
-                                val = _load_row[csv_col]
-                                if state_key in _numeric:
-                                    try:
-                                        val = float(val) if val != "" else default_values.get(state_key, 0)
-                                    except (ValueError, TypeError):
-                                        val = default_values.get(state_key, 0)
-                                else:
-                                    val = "" if pd.isna(val) else str(val)
-                                st.session_state[state_key] = val
-                        for price_key, csv_col in [("ask_price", "ask_price"), ("offer_price", "offer_price")]:
-                            if csv_col in _load_row.index:
-                                try:
-                                    st.session_state[price_key] = float(_load_row[csv_col])
-                                except (ValueError, TypeError):
-                                    pass
-                        st.session_state.pop("last_analyzed_deal", None)
-                        _row_saved_at = _load_row.get("saved_at", "")
-                        st.session_state["loaded_saved_at"] = _row_saved_at if _row_saved_at and not pd.isna(_row_saved_at) else ""
                         st.rerun()
