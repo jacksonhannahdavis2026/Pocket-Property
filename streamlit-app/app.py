@@ -300,9 +300,6 @@ def metric_explainer(label, what_it_means, why_it_matters, good_range=None):
 st.title("Property Pocket")
 muted_text("Fast acquisition screen for STR / rental property underwriting.")
 
-if "new_deal_message" in st.session_state:
-    st.success(st.session_state.pop("new_deal_message"))
-
 
 def dollars(value):
     return f"${value:,.0f}"
@@ -806,28 +803,63 @@ for key, value in default_values.items():
 
 # --- Pending start new deal (must run before any widgets with these keys are created) ---
 if st.session_state.get("pending_start_new_deal"):
-    _property_reset = {
+    _fresh_deal_values = {
+        "listing_text_input": "",
         "listing_url": "",
         "property_address": "",
         "market_city": "",
-        "ask_price": 450000,
-        "offer_price": 430000,
-        "bedrooms": 2.0,
-        "bathrooms": 2.0,
-        "square_feet": 1200,
-        "prior_year_annual_income": 45000,
-        "hoa_monthly": 1000,
-        "taxes_insurance_monthly": 365,
+        "ask_price": 0,
+        "offer_price": 0,
+        "bedrooms": 0.0,
+        "bathrooms": 0.0,
+        "square_feet": 0,
+        "prior_year_annual_income": 0,
+        "hoa_monthly": 0,
+        "taxes_insurance_monthly": 0,
         "utilities_monthly": 0,
+        "target_dscr": default_values["target_dscr"],
+        "down_payment_pct_input": default_values["down_payment_pct_input"],
+        "interest_rate_input": default_values["interest_rate_input"],
+        "loan_term_years": default_values["loan_term_years"],
+        "closing_costs": default_values["closing_costs"],
+        "case_scenario": "Base",
+        "county_appraisal_value": 0,
+        "land_allocation_pct_input": default_values["land_allocation_pct_input"],
+        "annual_w2_income": default_values["annual_w2_income"],
+        "five_year_asset_pct_input": default_values["five_year_asset_pct_input"],
+        "seven_year_asset_pct_input": default_values["seven_year_asset_pct_input"],
+        "fifteen_year_asset_pct_input": default_values["fifteen_year_asset_pct_input"],
+        "twenty_seven_half_year_asset_pct_input": default_values["twenty_seven_half_year_asset_pct_input"],
+        "annual_market_appreciation_input": default_values["annual_market_appreciation_input"],
+        "annual_rent_appreciation_input": default_values["annual_rent_appreciation_input"],
+        "cost_to_sell_pct_input": default_values["cost_to_sell_pct_input"],
+        "depreciation_recapture_tax_rate_input": default_values["depreciation_recapture_tax_rate_input"],
+        "market_comp_annual_revenue": None,
+        "market_comp_sold_price": None,
+        "market_comp_nightly_rate": None,
+        "market_comp_occupancy_pct": None,
+        "market_comp_notes": "",
+        "deal_notes_input": "",
     }
-    for _k, _v in _property_reset.items():
+    for _k, _v in _fresh_deal_values.items():
         st.session_state[_k] = _v
-    st.session_state.pop("last_analyzed_deal", None)
-    st.session_state.pop("solver_results", None)
-    st.session_state.pop("max_offer_result", None)
-    st.session_state.pop("loaded_saved_at", None)
+
+    _transient_keys = [
+        "last_analyzed_deal",
+        "max_offer_result",
+        "loaded_saved_at",
+        "pending_apply_scenario",
+        "pending_load_saved_deal",
+        "_solver_tier_applied",
+    ]
+    for _key in _transient_keys:
+        st.session_state.pop(_key, None)
+    for _key in list(st.session_state.keys()):
+        if _key.startswith("solver_"):
+            st.session_state.pop(_key, None)
+
     st.session_state.pop("pending_start_new_deal", None)
-    st.session_state["new_deal_message"] = "New deal started."
+    st.session_state["new_deal_message"] = "Fresh deal started."
 
 # --- Pending scenario apply (must run before any widgets with these keys are created) ---
 if "pending_apply_scenario" in st.session_state:
@@ -852,10 +884,14 @@ if "pending_load_saved_deal" in st.session_state:
     st.session_state.pop("max_offer_result", None)
     st.info("Saved deal loaded. Review inputs, then tap Analyze Deal.")
 
+if "new_deal_message" in st.session_state:
+    st.success(st.session_state.pop("new_deal_message"))
+
 listing_text = st.text_area(
     "Paste Zillow URL or listing text",
     placeholder="Paste Zillow URL or listing details here. For now, listing text works best.\n\nExample:\n$725,000\n2 bed\n2 bath\n1,204 sqft\n$675 monthly HOA\n732 Scenic Gulf Dr #D301, Miramar Beach, FL 32550",
     height=120,
+    key="listing_text_input",
 )
 
 listing_url = st.text_input(
@@ -881,7 +917,7 @@ with col_load:
             )
 
 with col_new:
-    if st.button("Start New Deal", use_container_width=True):
+    if st.button("Start Fresh Deal", use_container_width=True):
         st.session_state["pending_start_new_deal"] = True
         st.rerun()
 
