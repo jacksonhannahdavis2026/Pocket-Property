@@ -44,6 +44,70 @@ SAVED_DEALS_COLUMNS = [
     "updated_at",
 ]
 
+PROPERTY_STATE_OPTIONS = [
+    "",
+    "Alabama",
+    "Alaska",
+    "Arizona",
+    "Arkansas",
+    "California",
+    "Colorado",
+    "Connecticut",
+    "Delaware",
+    "Florida",
+    "Georgia",
+    "Hawaii",
+    "Idaho",
+    "Illinois",
+    "Indiana",
+    "Iowa",
+    "Kansas",
+    "Kentucky",
+    "Louisiana",
+    "Maine",
+    "Maryland",
+    "Massachusetts",
+    "Michigan",
+    "Minnesota",
+    "Mississippi",
+    "Missouri",
+    "Montana",
+    "Nebraska",
+    "Nevada",
+    "New Hampshire",
+    "New Jersey",
+    "New Mexico",
+    "New York",
+    "North Carolina",
+    "North Dakota",
+    "Ohio",
+    "Oklahoma",
+    "Oregon",
+    "Pennsylvania",
+    "Rhode Island",
+    "South Carolina",
+    "South Dakota",
+    "Tennessee",
+    "Texas",
+    "Utah",
+    "Vermont",
+    "Virginia",
+    "Washington",
+    "West Virginia",
+    "Wisconsin",
+    "Wyoming",
+]
+
+STATE_ESCROW_DEFAULTS = {
+    "Florida": (0.85, 0.45),
+    "Texas": (1.80, 0.35),
+    "Tennessee": (0.65, 0.35),
+    "Georgia": (0.90, 0.35),
+    "Alabama": (0.45, 0.40),
+    "Arizona": (0.60, 0.30),
+}
+DEFAULT_ESCROW_RATES = (1.00, 0.35)
+
 
 def save_deal_to_csv(row: dict) -> None:
     new_row = {col: row.get(col, "") for col in SAVED_DEALS_COLUMNS}
@@ -159,6 +223,75 @@ st.markdown(
             color: var(--pp-muted);
             font-size: 0.92rem;
             line-height: 1.45;
+        }
+        .pp-score-card {
+            border: 1px solid var(--pp-border);
+            border-radius: 8px;
+            padding: 1rem 1.05rem;
+            margin: 0.55rem 0 0.85rem;
+            box-shadow: 0 1px 2px rgba(46, 58, 54, 0.05);
+        }
+        .pp-score-card-success {
+            background: linear-gradient(180deg, rgba(78, 122, 103, 0.12), rgba(252, 251, 248, 0.92));
+            border-color: rgba(78, 122, 103, 0.26);
+        }
+        .pp-score-card-warning {
+            background: linear-gradient(180deg, rgba(200, 155, 90, 0.14), rgba(252, 251, 248, 0.92));
+            border-color: rgba(200, 155, 90, 0.30);
+        }
+        .pp-score-card-danger {
+            background: linear-gradient(180deg, rgba(184, 106, 91, 0.13), rgba(252, 251, 248, 0.92));
+            border-color: rgba(184, 106, 91, 0.30);
+        }
+        .pp-score-top {
+            display: flex;
+            align-items: baseline;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+        }
+        .pp-score-value {
+            color: var(--pp-primary-dark);
+            font-size: 2.35rem;
+            line-height: 1;
+            font-weight: 800;
+            letter-spacing: 0;
+        }
+        .pp-score-out-of {
+            color: var(--pp-muted);
+            font-size: 1rem;
+            font-weight: 650;
+        }
+        .pp-score-label {
+            color: var(--pp-text);
+            font-size: 1.05rem;
+            font-weight: 750;
+            margin-top: 0.35rem;
+        }
+        .pp-score-explanation {
+            color: var(--pp-muted);
+            font-size: 0.92rem;
+            line-height: 1.45;
+            margin-top: 0.25rem;
+        }
+        .pp-score-track {
+            height: 0.58rem;
+            border-radius: 999px;
+            background: rgba(46, 58, 54, 0.10);
+            overflow: hidden;
+            margin-top: 0.85rem;
+        }
+        .pp-score-fill {
+            height: 100%;
+            border-radius: 999px;
+        }
+        .pp-score-fill-success {
+            background: var(--pp-success);
+        }
+        .pp-score-fill-warning {
+            background: var(--pp-warning);
+        }
+        .pp-score-fill-danger {
+            background: var(--pp-risk);
         }
         .pp-badge {
             display: inline-flex;
@@ -289,6 +422,35 @@ def muted_text(text):
     st.markdown(f'<div class="pp-muted">{escape(text)}</div>', unsafe_allow_html=True)
 
 
+def score_progress_status(score):
+    if score >= 75:
+        return "success"
+    if score >= 50:
+        return "warning"
+    return "danger"
+
+
+def deal_score_card(score, label, explanation):
+    status = score_progress_status(score)
+    safe_score = max(0, min(100, int(score)))
+    st.markdown(
+        f"""
+        <div class="pp-score-card pp-score-card-{status}">
+            <div class="pp-score-top">
+                <div class="pp-score-value">{safe_score}</div>
+                <div class="pp-score-out-of">/ 100</div>
+            </div>
+            <div class="pp-score-label">{escape(str(label))}</div>
+            <div class="pp-score-explanation">{escape(str(explanation))}</div>
+            <div class="pp-score-track">
+                <div class="pp-score-fill pp-score-fill-{status}" style="width: {safe_score}%;"></div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def metric_explainer(label, what_it_means, why_it_matters, good_range=None):
     with st.expander(f"What does {label} mean?"):
         st.markdown(f"**What it means:** {what_it_means}")
@@ -367,8 +529,14 @@ def currency_input(label, key, help=None, allow_none=False, blank_zero=False):
     raw_value = st.text_input(label, key=display_key, help=help)
     parsed = parse_currency_value(raw_value)
     numeric_value = None if allow_none and parsed is None else (parsed or 0)
+    formatted_value = format_currency_value(numeric_value, blank_zero=blank_zero)
 
     st.session_state[key] = numeric_value
+    st.session_state[shadow_key] = numeric_value
+    if raw_value != formatted_value and parse_currency_value(raw_value) == parse_currency_value(numeric_value):
+        st.session_state[f"{key}_needs_currency_format"] = True
+    else:
+        st.session_state.pop(f"{key}_needs_currency_format", None)
     return numeric_value
 
 
@@ -570,26 +738,26 @@ def offer_position_label(offer_price, annual_revenue):
 
 def deal_score_label(score):
     if score >= 85:
-        return "Excellent"
+        return "Elite"
     if score >= 70:
         return "Strong"
     if score >= 55:
         return "Workable"
     if score >= 40:
-        return "Weak"
+        return "Risky"
     return "Avoid"
 
 
 def deal_score_status(label):
-    if label in {"Excellent", "Strong"}:
+    if label in {"Elite", "Strong"}:
         return "success"
-    if label in {"Workable", "Weak"}:
+    if label in {"Workable", "Risky"}:
         return "warning"
     return "danger"
 
 
 def deal_score_explanation(score_label, revenue_realism_label=None, offer_position=None):
-    if score_label in {"Excellent", "Strong"}:
+    if score_label in {"Elite", "Strong"}:
         if revenue_realism_label in {"Revenue needs support", "Revenue needs strong proof"}:
             return "This deal clears many core investor targets, but revenue assumptions still need verification."
         if offer_position == "above_range":
@@ -598,7 +766,7 @@ def deal_score_explanation(score_label, revenue_realism_label=None, offer_positi
 
     if score_label == "Workable":
         return "This deal may be workable, but it needs careful validation before it can support a confident offer."
-    if score_label == "Weak":
+    if score_label == "Risky":
         return "This deal is below target in important areas. Continue only if realistic improvements are available."
     return "This deal does not currently support a disciplined offer without major assumption changes."
 
@@ -681,6 +849,191 @@ def calculate_deal_score(
         score += 6
 
     return max(0, min(100, int(round(score))))
+
+
+def estimate_monthly_taxes_insurance(purchase_price, property_tax_rate_pct, insurance_rate_pct):
+    if not purchase_price:
+        return 0
+    property_tax_rate = (property_tax_rate_pct or 0) / 100
+    insurance_rate = (insurance_rate_pct or 0) / 100
+    monthly_property_tax = (purchase_price * property_tax_rate) / 12
+    monthly_insurance = (purchase_price * insurance_rate) / 12
+    return monthly_property_tax + monthly_insurance
+
+
+def build_qa_property_inputs(**overrides):
+    defaults = {
+        "ask_price": 600000,
+        "offer_price": 575000,
+        "down_payment_pct": 0.20,
+        "interest_rate": 0.0675,
+        "prior_year_annual_income": 90000,
+        "loan_term_years": 30,
+        "case_scenario": "Base",
+        "hoa_monthly": 450,
+        "taxes_insurance_monthly": 950,
+        "utilities_monthly": 250,
+        "county_appraisal_value": 575000,
+        "land_allocation_pct": 0.20,
+        "five_year_asset_pct": 0.10,
+        "seven_year_asset_pct": 0.03,
+        "fifteen_year_asset_pct": 0.07,
+        "twenty_seven_half_year_asset_pct": 0.80,
+        "annual_w2_income": 354000,
+        "closing_costs": 12000,
+        "annual_market_appreciation": 0.02,
+        "annual_rent_appreciation": 0.02,
+        "cost_to_sell_pct": 0.03,
+        "depreciation_recapture_tax_rate": 0.25,
+        "target_dscr": 1.00,
+    }
+    defaults.update(overrides)
+    return PropertyInputs(**defaults)
+
+
+def run_qa_scenarios():
+    qa_cases = [
+        {
+            "Scenario": "Elite deal",
+            "comp_revenue": 100000,
+            "inputs": build_qa_property_inputs(
+                offer_price=500000,
+                prior_year_annual_income=125000,
+                hoa_monthly=250,
+                taxes_insurance_monthly=650,
+                case_scenario="Base",
+            ),
+        },
+        {
+            "Scenario": "Strong deal",
+            "comp_revenue": 90000,
+            "inputs": build_qa_property_inputs(
+                offer_price=560000,
+                prior_year_annual_income=98000,
+                hoa_monthly=400,
+                taxes_insurance_monthly=850,
+                case_scenario="Base",
+            ),
+        },
+        {
+            "Scenario": "Borderline",
+            "comp_revenue": 80000,
+            "inputs": build_qa_property_inputs(
+                offer_price=625000,
+                prior_year_annual_income=78000,
+                hoa_monthly=650,
+                taxes_insurance_monthly=1050,
+                case_scenario="Base",
+            ),
+        },
+        {
+            "Scenario": "Unrealistic",
+            "comp_revenue": 70000,
+            "inputs": build_qa_property_inputs(
+                offer_price=800000,
+                prior_year_annual_income=62000,
+                hoa_monthly=1200,
+                taxes_insurance_monthly=1600,
+                case_scenario="Conservative",
+            ),
+        },
+        {
+            "Scenario": "Aggressive revenue",
+            "comp_revenue": 76000,
+            "inputs": build_qa_property_inputs(
+                offer_price=620000,
+                prior_year_annual_income=115000,
+                hoa_monthly=500,
+                taxes_insurance_monthly=900,
+                case_scenario="Aggressive",
+            ),
+        },
+        {
+            "Scenario": "Low DSCR",
+            "comp_revenue": 85000,
+            "inputs": build_qa_property_inputs(
+                offer_price=700000,
+                prior_year_annual_income=80000,
+                hoa_monthly=500,
+                taxes_insurance_monthly=1150,
+                case_scenario="Base",
+            ),
+        },
+        {
+            "Scenario": "Negative cash flow",
+            "comp_revenue": 90000,
+            "inputs": build_qa_property_inputs(
+                offer_price=690000,
+                prior_year_annual_income=85000,
+                hoa_monthly=1450,
+                taxes_insurance_monthly=1400,
+                utilities_monthly=350,
+                case_scenario="Base",
+            ),
+        },
+    ]
+
+    rows = []
+    for case in qa_cases:
+        inputs = case["inputs"]
+        results = calculate(inputs)
+        verdict = evaluate(results)
+        revenue_delta_pct = (
+            (inputs.prior_year_annual_income - case["comp_revenue"]) / case["comp_revenue"]
+            if case["comp_revenue"]
+            else None
+        )
+        revenue_realism_label, _ = market_reality_label(revenue_delta_pct, "Revenue")
+        offer_position = offer_position_label(inputs.offer_price, inputs.prior_year_annual_income)
+        score = calculate_deal_score(
+            dscr=results.get("dscr"),
+            monthly_net=results.get("monthly_net"),
+            core_irr=results.get("core_five_year_irr"),
+            revenue_gap=results.get("revenue_gap_dollars"),
+            annual_revenue=inputs.prior_year_annual_income,
+            revenue_realism_label=revenue_realism_label,
+            offer_position=offer_position,
+        )
+
+        flags = []
+        if (score >= 70 and verdict["verdict"] == "DO NOT BUY") or (
+            score < 40 and verdict["verdict"] == "BUY"
+        ):
+            flags.append("Conflicting logic")
+        if (
+            score >= 70
+            and (
+                results.get("dscr", 0) < 1.00
+                or results.get("monthly_net", 0) < 0
+                or (results.get("core_five_year_irr") is not None and results.get("core_five_year_irr") < 0.08)
+                or results.get("revenue_gap_pct", 0) > 0.25
+            )
+        ):
+            flags.append("Unrealistic strong score")
+        if (
+            results.get("five_year_irr") is not None
+            and results.get("five_year_irr") >= 0.25
+            and (
+                results.get("core_five_year_irr") is None
+                or results.get("core_five_year_irr") < 0.08
+            )
+        ):
+            flags.append("Tax IRR overpowering weak core")
+
+        rows.append(
+            {
+                "Scenario": case["Scenario"],
+                "Score": score,
+                "DSCR": f"{results.get('dscr', 0):.2f}",
+                "Core IRR": pct(results["core_five_year_irr"]) if results.get("core_five_year_irr") is not None else "N/A",
+                "Verdict": verdict["verdict"],
+                "Revenue Gap": dollars(results.get("revenue_gap_dollars", 0)),
+                "Revenue Premium": f"{revenue_delta_pct:+.1%}" if revenue_delta_pct is not None else "N/A",
+                "Flags": ", ".join(flags) if flags else "OK",
+            }
+        )
+
+    return rows
 
 
 def build_before_offer_checklist(
@@ -960,6 +1313,9 @@ default_values = {
     "prior_year_annual_income": 45000,
     "hoa_monthly": 1000,
     "taxes_insurance_monthly": 365,
+    "property_state": "",
+    "property_tax_rate_pct_input": 1.00,
+    "insurance_rate_pct_input": 0.35,
     "utilities_monthly": 0,
     "target_dscr": 1.00,
     "down_payment_pct_input": 10.0,
@@ -984,6 +1340,23 @@ for key, value in default_values.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
+_selected_state = st.session_state.get("property_state", "")
+if _selected_state and st.session_state.get("escrow_rates_state_applied") != _selected_state:
+    _tax_default, _insurance_default = STATE_ESCROW_DEFAULTS.get(
+        _selected_state,
+        DEFAULT_ESCROW_RATES,
+    )
+    st.session_state["property_tax_rate_pct_input"] = _tax_default
+    st.session_state["insurance_rate_pct_input"] = _insurance_default
+    st.session_state["escrow_rates_state_applied"] = _selected_state
+
+if st.session_state.get("pending_use_auto_escrow"):
+    _auto_escrow_value = st.session_state.get("pending_auto_escrow_value", 0)
+    st.session_state["taxes_insurance_monthly"] = round(_auto_escrow_value)
+    st.session_state["taxes_insurance_manual_override"] = False
+    st.session_state.pop("pending_use_auto_escrow", None)
+    st.session_state.pop("pending_auto_escrow_value", None)
+
 # --- Pending start new deal (must run before any widgets with these keys are created) ---
 if st.session_state.get("pending_start_new_deal"):
     _fresh_deal_values = {
@@ -999,6 +1372,9 @@ if st.session_state.get("pending_start_new_deal"):
         "prior_year_annual_income": 0,
         "hoa_monthly": 0,
         "taxes_insurance_monthly": 0,
+        "property_state": "",
+        "property_tax_rate_pct_input": default_values["property_tax_rate_pct_input"],
+        "insurance_rate_pct_input": default_values["insurance_rate_pct_input"],
         "utilities_monthly": 0,
         "target_dscr": default_values["target_dscr"],
         "down_payment_pct_input": default_values["down_payment_pct_input"],
@@ -1023,6 +1399,8 @@ if st.session_state.get("pending_start_new_deal"):
         "market_comp_occupancy_pct": None,
         "market_comp_notes": "",
         "deal_notes_input": "",
+        "taxes_insurance_manual_override": False,
+        "escrow_rates_state_applied": "",
     }
     for _k, _v in _fresh_deal_values.items():
         st.session_state[_k] = _v
@@ -1106,6 +1484,8 @@ with col_new:
 
 st.divider()
 
+use_auto_escrow = False
+
 with st.form("property_form"):
     section_header("Quick Deal Inputs")
     muted_text(
@@ -1136,12 +1516,75 @@ with st.form("property_form"):
         help="Monthly HOA dues in dollars. Example: 850.",
         blank_zero=True,
     )
+
+    escrow_col1, escrow_col2, escrow_col3 = st.columns(3)
+    with escrow_col1:
+        _state_index = (
+            PROPERTY_STATE_OPTIONS.index(st.session_state.get("property_state", ""))
+            if st.session_state.get("property_state", "") in PROPERTY_STATE_OPTIONS
+            else 0
+        )
+        property_state = st.selectbox(
+            "Property State",
+            options=PROPERTY_STATE_OPTIONS,
+            index=_state_index,
+            format_func=lambda value: "Select state" if value == "" else value,
+            key="property_state",
+            help="Optional. Selecting a state applies rough tax and insurance rate defaults.",
+        )
+    with escrow_col2:
+        property_tax_rate_pct_input = st.number_input(
+            "Property Tax Rate %",
+            step=0.05,
+            key="property_tax_rate_pct_input",
+            help="Rough annual property tax rate as a percent of purchase price. You can edit this estimate.",
+        )
+    with escrow_col3:
+        insurance_rate_pct_input = st.number_input(
+            "Insurance Rate %",
+            step=0.05,
+            key="insurance_rate_pct_input",
+            help="Rough annual insurance rate as a percent of purchase price. You can edit this estimate.",
+        )
+    if property_state and st.session_state.get("escrow_rates_state_applied") != property_state:
+        property_tax_rate_pct_input, insurance_rate_pct_input = STATE_ESCROW_DEFAULTS.get(
+            property_state,
+            DEFAULT_ESCROW_RATES,
+        )
+
+    _escrow_purchase_price = offer_price or ask_price
+    _estimated_taxes_insurance = estimate_monthly_taxes_insurance(
+        _escrow_purchase_price,
+        property_tax_rate_pct_input,
+        insurance_rate_pct_input,
+    )
+    _auto_escrow_rounded = round(_estimated_taxes_insurance) if _estimated_taxes_insurance else 0
+    _escrow_manual_override = st.session_state.get("taxes_insurance_manual_override", False)
+    if _auto_escrow_rounded and not _escrow_manual_override:
+        st.session_state["taxes_insurance_monthly"] = round(_estimated_taxes_insurance)
+
     taxes_insurance_monthly = currency_input(
         "Taxes / Insurance ($/mo)",
         key="taxes_insurance_monthly",
-        help="Monthly taxes and insurance estimate in dollars. Example: 650.",
+        help="Auto-estimate uses purchase price x tax/insurance rates divided by 12. You can manually override this field.",
         blank_zero=True,
     )
+    if _auto_escrow_rounded and abs((taxes_insurance_monthly or 0) - _auto_escrow_rounded) > 1:
+        st.session_state["taxes_insurance_manual_override"] = True
+        _escrow_manual_override = True
+
+    if _auto_escrow_rounded:
+        muted_text(
+            f"Auto estimate: {dollars_month(_estimated_taxes_insurance)} using rough {property_state or 'state fallback'} assumptions ({property_tax_rate_pct_input:.2f}% tax, {insurance_rate_pct_input:.2f}% insurance)."
+        )
+        if _escrow_manual_override:
+            muted_text(
+                f"Manual override active. Auto estimate is {dollars_month(_estimated_taxes_insurance)}."
+            )
+            use_auto_escrow = st.form_submit_button(
+                "Use Auto Estimate",
+                use_container_width=True,
+            )
 
     with st.expander("Property Details", expanded=False):
         muted_text("Loads automatically from listing text where available.")
@@ -1286,6 +1729,28 @@ with st.form("property_form"):
 
     submitted = st.form_submit_button("Analyze Deal", use_container_width=True, type="primary")
 
+if use_auto_escrow:
+    st.session_state["pending_use_auto_escrow"] = True
+    st.session_state["pending_auto_escrow_value"] = _auto_escrow_rounded
+    st.rerun()
+
+if property_state and st.session_state.get("escrow_rates_state_applied") != property_state:
+    st.rerun()
+
+
+with st.expander("Developer / QA Runner", expanded=False):
+    muted_text("Hidden testing utility for validating deal score, verdict, and risk behavior across predefined scenarios.")
+    if st.button("Run Stress Test", use_container_width=True):
+        _qa_rows = run_qa_scenarios()
+        st.dataframe(pd.DataFrame(_qa_rows), use_container_width=True, hide_index=True)
+        _flagged_rows = [row for row in _qa_rows if row["Flags"] != "OK"]
+        if _flagged_rows:
+            st.warning(
+                f"{len(_flagged_rows)} QA scenario(s) returned flags. Review score/verdict alignment before shipping."
+            )
+        else:
+            st.success("Stress test completed with no score/verdict flags.")
+
 
 if submitted:
     inputs = PropertyInputs(
@@ -1334,6 +1799,8 @@ if submitted:
         "listing_url": st.session_state.get("listing_url", ""),
         "market_city": market_city,
     }
+    if any(_key.endswith("_needs_currency_format") for _key in st.session_state.keys()):
+        st.rerun()
 
 
 _deal = st.session_state.get("last_analyzed_deal")
@@ -1429,14 +1896,14 @@ if _deal:
     muted_text(summary)
 
     section_header("Deal Snapshot", "Core underwriting outputs for offer confidence.")
-    st.markdown(f"**Deal Score:** {_deal_score} / 100 - {_deal_score_label}")
-    status_badge(_deal_score_label, deal_score_status(_deal_score_label))
-    muted_text(
+    deal_score_card(
+        _deal_score,
+        _deal_score_label,
         deal_score_explanation(
             _deal_score_label,
             _score_revenue_realism_label,
             _score_offer_position,
-        )
+        ),
     )
 
     ds1, ds2 = st.columns(2)
