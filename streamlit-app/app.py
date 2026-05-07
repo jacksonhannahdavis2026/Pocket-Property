@@ -555,6 +555,134 @@ def market_reality_interpretation(revenue_delta_pct, price_delta_pct):
     return "The assumptions are within a reviewable range. Validate the comp quality before treating this as offer support."
 
 
+def offer_position_label(offer_price, annual_revenue):
+    if not offer_price or not annual_revenue:
+        return None
+
+    low_value = annual_revenue / 0.10
+    high_value = annual_revenue / 0.07
+    if offer_price < low_value:
+        return "below_range"
+    if offer_price <= high_value:
+        return "within_range"
+    return "above_range"
+
+
+def deal_score_label(score):
+    if score >= 85:
+        return "Excellent"
+    if score >= 70:
+        return "Strong"
+    if score >= 55:
+        return "Workable"
+    if score >= 40:
+        return "Weak"
+    return "Avoid"
+
+
+def deal_score_status(label):
+    if label in {"Excellent", "Strong"}:
+        return "success"
+    if label in {"Workable", "Weak"}:
+        return "warning"
+    return "danger"
+
+
+def deal_score_explanation(score_label, revenue_realism_label=None, offer_position=None):
+    if score_label in {"Excellent", "Strong"}:
+        if revenue_realism_label in {"Revenue needs support", "Revenue needs strong proof"}:
+            return "This deal clears many core investor targets, but revenue assumptions still need verification."
+        if offer_position == "above_range":
+            return "This deal has attractive metrics, but the offer needs value discipline before proceeding."
+        return "This deal clears most core investor targets and looks disciplined on the current assumptions."
+
+    if score_label == "Workable":
+        return "This deal may be workable, but it needs careful validation before it can support a confident offer."
+    if score_label == "Weak":
+        return "This deal is below target in important areas. Continue only if realistic improvements are available."
+    return "This deal does not currently support a disciplined offer without major assumption changes."
+
+
+def calculate_deal_score(
+    dscr,
+    monthly_net,
+    core_irr,
+    revenue_gap,
+    annual_revenue,
+    revenue_realism_label=None,
+    offer_position=None,
+):
+    score = 0
+
+    if dscr is None:
+        score += 8
+    elif dscr >= 1.25:
+        score += 25
+    elif dscr >= 1.00:
+        score += 18
+    elif dscr >= 0.80:
+        score += 10
+    else:
+        score += 3
+
+    if monthly_net is None:
+        score += 6
+    elif monthly_net >= 1000:
+        score += 20
+    elif monthly_net >= 500:
+        score += 15
+    elif monthly_net >= 0:
+        score += 9
+    else:
+        score += 2
+
+    if core_irr is None:
+        score += 6
+    elif core_irr >= 0.18:
+        score += 20
+    elif core_irr >= 0.12:
+        score += 15
+    elif core_irr >= 0.08:
+        score += 9
+    else:
+        score += 2
+
+    if revenue_gap is None:
+        score += 7
+    elif revenue_gap <= 0:
+        score += 15
+    elif annual_revenue and annual_revenue > 0:
+        gap_pct = revenue_gap / annual_revenue
+        if gap_pct < 0.10:
+            score += 10
+        elif gap_pct <= 0.25:
+            score += 5
+        else:
+            score += 1
+    else:
+        score += 3
+
+    if revenue_realism_label in {"Revenue looks conservative", "Revenue looks grounded"}:
+        score += 10
+    elif revenue_realism_label == "Revenue needs support":
+        score += 5
+    elif revenue_realism_label == "Revenue needs strong proof":
+        score += 1
+    else:
+        score += 6
+
+    if offer_position == "below_range":
+        score += 10
+    elif offer_position == "within_range":
+        score += 6
+    elif offer_position == "above_range":
+        score += 1
+    else:
+        score += 6
+
+    return max(0, min(100, int(round(score))))
+
+
 def build_before_offer_checklist(
     deal_tier,
     results,
@@ -1257,6 +1385,34 @@ if _deal:
 
     verdict_label = verdict.get("verdict", "REVIEW")
     _revenue_display = revenue_gap_display(results)
+    _score_comp_revenue = parse_currency_value(
+        st.session_state.get("market_comp_annual_revenue")
+    )
+    _score_revenue_delta_pct = (
+        (_prior_year_annual_income - _score_comp_revenue) / _score_comp_revenue
+        if _score_comp_revenue
+        else None
+    )
+    _score_revenue_realism_label = None
+    if _score_revenue_delta_pct is not None:
+        _score_revenue_realism_label, _ = market_reality_label(
+            _score_revenue_delta_pct,
+            "Revenue",
+        )
+    _score_offer_position = offer_position_label(
+        _offer_price,
+        _prior_year_annual_income,
+    )
+    _deal_score = calculate_deal_score(
+        dscr=results.get("dscr"),
+        monthly_net=results.get("monthly_net"),
+        core_irr=results.get("core_five_year_irr"),
+        revenue_gap=results.get("revenue_gap_dollars"),
+        annual_revenue=_prior_year_annual_income,
+        revenue_realism_label=_score_revenue_realism_label,
+        offer_position=_score_offer_position,
+    )
+    _deal_score_label = deal_score_label(_deal_score)
 
     section_header("Deal Decision", "Read this first, then inspect the risks and offer path.")
 
@@ -1273,6 +1429,15 @@ if _deal:
     muted_text(summary)
 
     section_header("Deal Snapshot", "Core underwriting outputs for offer confidence.")
+    st.markdown(f"**Deal Score:** {_deal_score} / 100 - {_deal_score_label}")
+    status_badge(_deal_score_label, deal_score_status(_deal_score_label))
+    muted_text(
+        deal_score_explanation(
+            _deal_score_label,
+            _score_revenue_realism_label,
+            _score_offer_position,
+        )
+    )
 
     ds1, ds2 = st.columns(2)
     ds1.metric("Monthly Net", dollars_month(results["monthly_net"]))
