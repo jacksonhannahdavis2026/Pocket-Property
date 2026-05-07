@@ -76,7 +76,7 @@ def update_deal_in_csv(saved_at_key: str, updated_row: dict) -> bool:
     return True
 
 
-def load_saved_deals(reverse: bool = True) -> pd.DataFrame | None:
+def load_saved_deals(reverse: bool = True):
     if not os.path.isfile(SAVED_DEALS_PATH):
         return None
     try:
@@ -320,6 +320,24 @@ def multiple(value):
     return f"{value:.2f}x"
 
 
+def revenue_gap_display(results):
+    gap = results.get("revenue_gap_dollars", 0) or 0
+    if gap > 0:
+        return {
+            "label": "Revenue Needed",
+            "value": dollars(gap),
+            "status": "danger",
+            "text": "This deal still needs more annual revenue to hit the target.",
+        }
+    cushion = abs(gap)
+    return {
+        "label": "Revenue Cushion",
+        "value": f"+{dollars(cushion)}",
+        "status": "success",
+        "text": "Current revenue assumptions exceed the target revenue need.",
+    }
+
+
 PIPELINE_STATUSES = ["Analyzing", "Interested", "Offer Ready", "Under Contract", "Passed"]
 PASS_REASONS = [
     "",
@@ -448,10 +466,20 @@ def build_due_diligence_links(property_address, market_city):
 
 def market_reality_label(delta_pct, metric_name):
     if delta_pct is None:
-        return "Add a comp", "info"
-    if delta_pct <= 0.10:
+        return f"Add {metric_name.lower()} comp", "info"
+
+    if metric_name == "Revenue":
+        if delta_pct < 0:
+            return "Revenue looks conservative", "success"
+        if delta_pct <= 0.10:
+            return "Revenue looks grounded", "success"
+        if delta_pct <= 0.25:
+            return "Revenue needs support", "warning"
+        return "Revenue needs strong proof", "danger"
+
+    if abs(delta_pct) <= 0.10:
         return f"{metric_name} looks grounded", "success"
-    if delta_pct <= 0.25:
+    if abs(delta_pct) <= 0.25:
         return f"{metric_name} needs support", "warning"
     return f"{metric_name} is stretched", "danger"
 
@@ -462,12 +490,14 @@ def market_reality_interpretation(revenue_delta_pct, price_delta_pct):
     if revenue_delta_pct is not None and revenue_delta_pct > 0.25:
         return "Revenue is materially above the comp. Do not rely on this assumption without strong source support."
     if price_delta_pct is not None and price_delta_pct > 0.25:
-        return "The offer is materially above the sold comp. Confirm quality, location, and income differences before proceeding."
+        return "The offer is materially above the sold comp. Confirm quality, location, and revenue differences before proceeding."
+    if revenue_delta_pct is not None and revenue_delta_pct < 0:
+        return "Revenue is below the comp, which is a more conservative starting point. Still confirm the comp quality before relying on it."
     if (
         revenue_delta_pct is not None
         and price_delta_pct is not None
-        and revenue_delta_pct <= 0.10
-        and price_delta_pct <= 0.10
+        and abs(revenue_delta_pct) <= 0.10
+        and abs(price_delta_pct) <= 0.10
     ):
         return "Revenue and offer assumptions are close to the comp. This does not prove the deal, but it lowers assumption risk."
     return "The assumptions are within a reviewable range. Validate the comp quality before treating this as offer support."
@@ -510,7 +540,11 @@ def build_before_offer_checklist(
         checklist.append("Add a credible annual revenue estimate before making an offer.")
 
     if revenue_gap_pct is not None:
-        if revenue_gap_pct > 0.30:
+        if revenue_gap_pct <= 0:
+            checklist.append(
+                "Revenue clears the target today, but still validate source quality before offering."
+            )
+        elif revenue_gap_pct > 0.30:
             checklist.append(
                 "Do not rely on upside revenue without third-party STR data, owner statements, or strong comps."
             )
@@ -608,7 +642,7 @@ def build_risk_flags(
                 {
                     "level": "high",
                     "title": "Low revenue confidence",
-                    "detail": f"Revenue gap is {revenue_gap_pct:.1%}; upside needs strong proof.",
+                    "detail": f"Revenue needed is {revenue_gap_pct:.1%} above current assumptions; upside needs strong proof.",
                 }
             )
         elif revenue_gap_pct >= 0.15:
@@ -616,7 +650,7 @@ def build_risk_flags(
                 {
                     "level": "medium",
                     "title": "Medium revenue confidence",
-                    "detail": f"Revenue gap is {revenue_gap_pct:.1%}; validate assumptions before offering.",
+                    "detail": f"Revenue needed is {revenue_gap_pct:.1%} above current assumptions; validate before offering.",
                 }
             )
 
@@ -856,21 +890,38 @@ st.divider()
 with st.form("property_form"):
     section_header("Quick Deal Inputs")
     muted_text(
-        "The key deal drivers. Ask price, HOA, and taxes can load from listing text; income usually needs Zillow, AirDNA, Rabbu, actuals, or owner data."
+        "The key deal drivers. Ask price, HOA, and taxes can load from listing text; revenue usually needs Zillow, AirDNA, Rabbu, actuals, or owner data."
     )
 
-    ask_price = st.number_input("Ask Price ($)", step=5000, key="ask_price")
-    offer_price = st.number_input("Offer Price ($)", step=5000, key="offer_price")
+    ask_price = st.number_input(
+        "Ask Price ($)",
+        step=5000,
+        key="ask_price",
+        help="Enter the listing price in dollars. Example: 615000.",
+    )
+    offer_price = st.number_input(
+        "Offer Price ($)",
+        step=5000,
+        key="offer_price",
+        help="Enter your proposed purchase price in dollars. Example: 585000.",
+    )
     prior_year_annual_income = st.number_input(
-        "Estimated / Prior Year Annual Income ($)",
+        "Estimated / Prior Year Annual Revenue ($)",
         step=1000,
         key="prior_year_annual_income",
+        help="Top-line annual rent or booking revenue before expenses. Example: 78000.",
     )
-    hoa_monthly = st.number_input("HOA ($/mo)", step=100, key="hoa_monthly")
+    hoa_monthly = st.number_input(
+        "HOA ($/mo)",
+        step=100,
+        key="hoa_monthly",
+        help="Monthly HOA dues in dollars. Example: 850.",
+    )
     taxes_insurance_monthly = st.number_input(
         "Taxes / Insurance ($/mo)",
         step=25,
         key="taxes_insurance_monthly",
+        help="Monthly taxes and insurance estimate in dollars. Example: 650.",
     )
 
     with st.expander("Property Details", expanded=False):
@@ -939,12 +990,13 @@ with st.form("property_form"):
         xcol1, xcol2 = st.columns(2)
         with xcol1:
             case_scenario = st.selectbox(
-                "Case Scenario",
+                "Model Scenario",
                 ["Aggressive", "Base", "Conservative"],
                 index=["Aggressive", "Base", "Conservative"].index(
                     st.session_state["case_scenario"]
                 ),
                 key="case_scenario",
+                help="Global model setting for revenue haircut, STR costs, and maintenance. This is not just an exit assumption.",
             )
             annual_market_appreciation_input = st.number_input(
                 "Annual Market Appreciation %",
@@ -1103,18 +1155,19 @@ if _deal:
         _tier_irr_default = 8.0
 
     verdict_label = verdict.get("verdict", "REVIEW")
+    _revenue_display = revenue_gap_display(results)
 
     section_header("Deal Decision", "Read this first, then inspect the risks and offer path.")
 
     if _deal_tier == "STRONG":
         status_badge("STRONG DEAL", "success")
-        summary = "This deal clears your baseline targets. Focus on whether it can become excellent."
+        summary = "This clears baseline targets. Verify assumptions, then consider offer strategy."
     elif _deal_tier == "FIXABLE":
         status_badge("CLOSE / FIXABLE", "warning")
-        summary = "This deal is close enough to test reasonable what-if scenarios before deciding."
+        summary = "This may work, but only if the gap can be solved through realistic changes."
     else:
         status_badge("UNREALISTIC", "danger")
-        summary = "This deal is too far from your baseline targets. Move on unless assumptions are materially wrong."
+        summary = "Move on unless a major price, revenue, or expense assumption is wrong."
 
     muted_text(summary)
 
@@ -1129,13 +1182,15 @@ if _deal:
         "Core 5-Year IRR",
         pct(results["core_five_year_irr"]) if results["core_five_year_irr"] is not None else "N/A",
     )
-    ds4.metric("Revenue Gap", dollars(results["revenue_gap_dollars"]))
+    ds4.metric(_revenue_display["label"], _revenue_display["value"])
 
     ds5, _ = st.columns(2)
     ds5.metric(
         "Tax-Enhanced IRR",
         pct(results["five_year_irr"]) if results["five_year_irr"] is not None else "N/A",
     )
+    status_badge(_revenue_display["label"], _revenue_display["status"])
+    muted_text(_revenue_display["text"])
 
     st.markdown("**Metric Explainers**")
     metric_explainer(
@@ -1146,7 +1201,7 @@ if _deal:
     )
     metric_explainer(
         "DSCR",
-        "Debt service coverage ratio: income available to cover loan payments.",
+        "Debt service coverage ratio: revenue available to cover loan payments after operating expenses.",
         "Lenders and investors use it to judge whether the deal can safely support its debt.",
         "1.00x+ covers debt; 1.20x+ gives more cushion.",
     )
@@ -1157,10 +1212,10 @@ if _deal:
         "8%+ is acceptable; 15%+ is strong.",
     )
     metric_explainer(
-        "Revenue Gap",
-        "Extra annual revenue needed to hit the target DSCR.",
-        "It shows how much the income assumption must improve before the deal feels safer.",
-        "$0 means revenue already clears the target.",
+        "Revenue Needed / Cushion",
+        "Revenue Needed means the deal still needs more annual revenue. Revenue Cushion means current assumptions already exceed the target.",
+        "It shows whether revenue is a problem to solve or a cushion to verify.",
+        "$0 needed or a positive cushion is better.",
     )
 
     st.markdown("**Before You Offer**")
@@ -1214,12 +1269,13 @@ if _deal:
         bm1.metric("Required Annual Revenue", dollars(_breakeven))
         bm2.metric("Current Annual Revenue", dollars(_current_rev))
 
+        _solver_revenue_display = revenue_gap_display(results)
         bm3, bm4 = st.columns(2)
-        bm3.metric("Revenue Increase Needed", dollars(max(_gap_dollars, 0)))
-        bm4.metric("Revenue Gap %", f"{_gap_pct:.1%}" if _gap_pct is not None else "N/A")
+        bm3.metric(_solver_revenue_display["label"], _solver_revenue_display["value"])
+        bm4.metric("Revenue Need %", f"{max(_gap_pct, 0):.1%}" if _gap_pct is not None else "N/A")
 
         if _gap_dollars <= 0:
-            st.success("Revenue already clears the target DSCR.")
+            st.success("Revenue already clears the target DSCR. Verify the source before relying on it.")
         elif _gap_pct <= 0.10:
             st.info("Small gap. This may be fixable with modestly better revenue or expenses.")
         elif _gap_pct <= 0.25:
@@ -1484,12 +1540,15 @@ if _deal:
                 _ng_gap_dollars = _no_gap.get("gap_dollars", 0)
                 _ng_gap_pct = _no_gap.get("gap_pct", 0)
                 if _ng_current or _ng_breakeven:
+                    _ng_display = revenue_gap_display(
+                        {"revenue_gap_dollars": _ng_gap_dollars}
+                    )
                     _ng1, _ng2 = st.columns(2)
                     _ng1.metric("Current Annual Revenue", dollars(_ng_current))
                     _ng2.metric("Required Annual Revenue", dollars(_ng_breakeven))
                     _ng3, _ng4 = st.columns(2)
-                    _ng3.metric("Revenue Increase Needed", dollars(max(_ng_gap_dollars, 0)))
-                    _ng4.metric("Revenue Gap %", f"{_ng_gap_pct:.1%}" if _ng_gap_pct is not None else "N/A")
+                    _ng3.metric(_ng_display["label"], _ng_display["value"])
+                    _ng4.metric("Revenue Need %", f"{max(_ng_gap_pct, 0):.1%}" if _ng_gap_pct is not None else "N/A")
                 if _ng_gap_pct is not None and _ng_gap_pct > 0.50:
                     st.warning("Recommendation: Move on unless you have strong proof that revenue can materially outperform the current estimate.")
                 elif _ng_gap_pct is not None and _ng_gap_pct > 0.25:
@@ -1521,7 +1580,7 @@ if _deal:
                         _insight = "Deal Driver Insight: This is primarily a price-driven deal. The deal works mainly by buying it at a lower basis."
                     st.caption(_insight)
                 elif _rev_only:
-                    st.caption("Deal Driver Insight: Revenue alone can make this deal work, but validate the income assumption carefully.")
+                    st.caption("Deal Driver Insight: Revenue alone can make this deal work, but validate the revenue assumption carefully.")
 
                 for _i, _s in enumerate(_solver_top5, 1):
                     _price_chg_pct = (_sb_offer - _s["offer_price"]) / _sb_offer if _sb_offer else 0
@@ -1610,41 +1669,48 @@ if _deal:
         "Market Reality Check",
         "Manual comp pressure test for revenue and offer assumptions.",
     )
-    with st.expander("Enter Nearby Comp", expanded=False):
-        _comp_col1, _comp_col2 = st.columns(2)
-        with _comp_col1:
-            _comp_revenue = st.number_input(
-                "Nearby Comp Annual Revenue ($)",
-                min_value=0.0,
-                step=1000.0,
-                key="market_comp_annual_revenue",
-            )
-            _comp_sold_price = st.number_input(
-                "Nearby Comp Sold Price ($)",
-                min_value=0.0,
-                step=5000.0,
-                key="market_comp_sold_price",
-            )
-        with _comp_col2:
-            _comp_nightly_rate = st.number_input(
-                "Nearby Comp Nightly Rate ($)",
-                min_value=0.0,
-                step=25.0,
-                key="market_comp_nightly_rate",
-            )
-            _comp_occupancy_pct = st.number_input(
-                "Nearby Comp Occupancy %",
-                min_value=0.0,
-                max_value=100.0,
-                step=1.0,
-                key="market_comp_occupancy_pct",
-            )
-        _comp_notes = st.text_area(
-            "Notes / Source",
-            placeholder="AirDNA, Rabbu, owner actuals, MLS sale, county records...",
-            height=80,
-            key="market_comp_notes",
+    _comp_col1, _comp_col2 = st.columns(2)
+    with _comp_col1:
+        _comp_revenue = st.number_input(
+            "Nearby Comp Annual Revenue ($)",
+            min_value=0.0,
+            value=None,
+            step=1000.0,
+            key="market_comp_annual_revenue",
+            help="Example: 78000",
         )
+        _comp_sold_price = st.number_input(
+            "Nearby Comp Sold Price ($)",
+            min_value=0.0,
+            value=None,
+            step=5000.0,
+            key="market_comp_sold_price",
+            help="Example: 600000",
+        )
+    with _comp_col2:
+        _comp_nightly_rate = st.number_input(
+            "Nearby Comp Nightly Rate ($)",
+            min_value=0.0,
+            value=None,
+            step=25.0,
+            key="market_comp_nightly_rate",
+            help="Example: 475",
+        )
+        _comp_occupancy_pct = st.number_input(
+            "Nearby Comp Occupancy %",
+            min_value=0.0,
+            max_value=100.0,
+            value=None,
+            step=1.0,
+            key="market_comp_occupancy_pct",
+            help="Example: 62",
+        )
+    _comp_notes = st.text_area(
+        "Notes / Source",
+        placeholder="AirDNA, Rabbu, owner actuals, MLS sale, county records...",
+        height=80,
+        key="market_comp_notes",
+    )
 
     _revenue_delta_pct = (
         (_prior_year_annual_income - _comp_revenue) / _comp_revenue
@@ -1657,37 +1723,44 @@ if _deal:
         else None
     )
     _revenue_label, _revenue_status = market_reality_label(
-        abs(_revenue_delta_pct) if _revenue_delta_pct is not None else None,
+        _revenue_delta_pct,
         "Revenue",
     )
     _offer_label, _offer_status = market_reality_label(
-        abs(_price_delta_pct) if _price_delta_pct is not None else None,
+        _price_delta_pct,
         "Offer",
     )
 
-    _mr1, _mr2 = st.columns(2)
-    _mr1.metric(
-        "Revenue Premium / Discount",
-        f"{_revenue_delta_pct:+.1%}" if _revenue_delta_pct is not None else "Add comp",
-    )
-    _mr2.metric(
-        "Price Premium / Discount",
-        f"{_price_delta_pct:+.1%}" if _price_delta_pct is not None else "Add comp",
-    )
+    if _revenue_delta_pct is None and _price_delta_pct is None:
+        info_card(
+            "Reality Check",
+            "Enter at least one nearby comp revenue or sold price to pressure-test the current assumptions.",
+        )
+    else:
+        _mr1, _mr2 = st.columns(2)
+        _mr1.metric(
+            "Revenue Premium / Discount",
+            f"{_revenue_delta_pct:+.1%}" if _revenue_delta_pct is not None else "No revenue comp",
+        )
+        _mr2.metric(
+            "Price Premium / Discount",
+            f"{_price_delta_pct:+.1%}" if _price_delta_pct is not None else "No price comp",
+        )
 
-    _rl, _ol = st.columns(2)
-    with _rl:
-        status_badge(_revenue_label, _revenue_status)
-    with _ol:
-        status_badge(_offer_label, _offer_status)
+        _rl, _ol = st.columns(2)
+        with _rl:
+            status_badge(_revenue_label, _revenue_status)
+        with _ol:
+            status_badge(_offer_label, _offer_status)
 
-    info_card(
-        "Reality Check",
-        market_reality_interpretation(
-            abs(_revenue_delta_pct) if _revenue_delta_pct is not None else None,
-            abs(_price_delta_pct) if _price_delta_pct is not None else None,
-        ),
-    )
+        info_card(
+            "Reality Check",
+            market_reality_interpretation(
+                _revenue_delta_pct,
+                _price_delta_pct,
+            ),
+        )
+
     if _comp_nightly_rate or _comp_occupancy_pct or _comp_notes:
         muted_text(
             "Use nightly rate, occupancy, and source notes to judge whether this comp is actually comparable."
@@ -1802,12 +1875,12 @@ if _deal:
     if strengths:
         with st.expander("Strengths", expanded=True):
             for strength in strengths:
-                st.write(f"✅ {strength}")
+                st.write(f"Good: {strength}")
 
     if reasons:
         with st.expander("Concerns / Notes", expanded=True):
             for reason in reasons:
-                st.write(f"⚠️ {reason}")
+                st.write(f"Note: {reason}")
 
     st.divider()
 
@@ -1838,7 +1911,7 @@ if _deal:
     k5.metric("Avg Monthly Revenue", dollars_month(results["average_monthly_revenue"]))
     k6.metric("Monthly Net", dollars_month(results["monthly_net"]))
     k7.metric("DSCR", f"{results['dscr']:.2f}")
-    k8.metric("Revenue Gap", dollars(results["revenue_gap_dollars"]))
+    k8.metric(_revenue_display["label"], _revenue_display["value"])
 
     st.divider()
 
@@ -1906,7 +1979,7 @@ if _deal:
                 "5-Year IRR": scenario_results["five_year_irr"],
                 "Core 5-Year IRR": scenario_results["core_five_year_irr"],
                 "Equity Multiple": scenario_results["equity_multiple"],
-                "Revenue Gap": scenario_results["revenue_gap_dollars"],
+                "Revenue Needed": max(scenario_results["revenue_gap_dollars"], 0),
                 "Year-5 Cash Out": scenario_results["year_5_cash_out"],
             }
         )
@@ -1921,7 +1994,7 @@ if _deal:
                 "5-Year IRR": "{:.1%}",
                 "Core 5-Year IRR": "{:.1%}",
                 "Equity Multiple": "{:.2f}x",
-                "Revenue Gap": "${:,.0f}",
+                "Revenue Needed": "${:,.0f}",
                 "Year-5 Cash Out": "${:,.0f}",
             }
         ),
