@@ -317,6 +317,61 @@ def multiple(value):
     return f"{value:.2f}x"
 
 
+def parse_currency_value(value):
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    cleaned = str(value).strip()
+    if not cleaned:
+        return None
+
+    cleaned = re.sub(r"[^0-9.\-]", "", cleaned)
+    if cleaned in {"", "-", ".", "-."}:
+        return None
+
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def format_currency_value(value, blank_zero=False):
+    parsed = parse_currency_value(value)
+    if parsed is None:
+        return ""
+    if blank_zero and parsed == 0:
+        return ""
+    return f"${parsed:,.0f}"
+
+
+def currency_input(label, key, help=None, allow_none=False, blank_zero=False):
+    display_key = f"{key}_currency_display"
+    shadow_key = f"{key}_currency_value"
+    canonical_value = st.session_state.get(key)
+    expected_display = format_currency_value(canonical_value, blank_zero=blank_zero)
+    current_display = st.session_state.get(display_key)
+
+    if (
+        display_key not in st.session_state
+        or st.session_state.get(shadow_key) != canonical_value
+        or (
+            current_display != expected_display
+            and parse_currency_value(current_display) == parse_currency_value(canonical_value)
+        )
+    ):
+        st.session_state[display_key] = expected_display
+        st.session_state[shadow_key] = canonical_value
+
+    raw_value = st.text_input(label, key=display_key, help=help)
+    parsed = parse_currency_value(raw_value)
+    numeric_value = None if allow_none and parsed is None else (parsed or 0)
+
+    st.session_state[key] = numeric_value
+    return numeric_value
+
+
 def revenue_gap_display(results):
     gap = results.get("revenue_gap_dollars", 0) or 0
     if gap > 0:
@@ -929,35 +984,35 @@ with st.form("property_form"):
         "The key deal drivers. Ask price, HOA, and taxes can load from listing text; revenue usually needs Zillow, AirDNA, Rabbu, actuals, or owner data."
     )
 
-    ask_price = st.number_input(
+    ask_price = currency_input(
         "Ask Price ($)",
-        step=5000,
         key="ask_price",
         help="Enter the listing price in dollars. Example: 615000.",
+        blank_zero=True,
     )
-    offer_price = st.number_input(
+    offer_price = currency_input(
         "Offer Price ($)",
-        step=5000,
         key="offer_price",
         help="Enter your proposed purchase price in dollars. Example: 585000.",
+        blank_zero=True,
     )
-    prior_year_annual_income = st.number_input(
+    prior_year_annual_income = currency_input(
         "Estimated / Prior Year Annual Revenue ($)",
-        step=1000,
         key="prior_year_annual_income",
         help="Top-line annual rent or booking revenue before expenses. Example: 78000.",
+        blank_zero=True,
     )
-    hoa_monthly = st.number_input(
+    hoa_monthly = currency_input(
         "HOA ($/mo)",
-        step=100,
         key="hoa_monthly",
         help="Monthly HOA dues in dollars. Example: 850.",
+        blank_zero=True,
     )
-    taxes_insurance_monthly = st.number_input(
+    taxes_insurance_monthly = currency_input(
         "Taxes / Insurance ($/mo)",
-        step=25,
         key="taxes_insurance_monthly",
         help="Monthly taxes and insurance estimate in dollars. Example: 650.",
+        blank_zero=True,
     )
 
     with st.expander("Property Details", expanded=False):
@@ -970,10 +1025,11 @@ with st.form("property_form"):
         with pcol2:
             bathrooms = st.number_input("Bathrooms", step=0.5, key="bathrooms")
             square_feet = st.number_input("Square Feet", step=50, key="square_feet")
-            utilities_monthly = st.number_input(
+            utilities_monthly = currency_input(
                 "Utilities (not in HOA, $/mo)",
-                step=25,
                 key="utilities_monthly",
+                help="Monthly utility estimate in dollars. Example: 250.",
+                blank_zero=True,
             )
 
     with st.expander("Financing", expanded=False):
@@ -989,22 +1045,31 @@ with st.form("property_form"):
                 "Loan Term (years)", step=1, key="loan_term_years"
             )
         with fcol2:
-            closing_costs = st.number_input(
-                "Closing Costs ($)", step=1000, key="closing_costs"
+            closing_costs = currency_input(
+                "Closing Costs ($)",
+                key="closing_costs",
+                help="Estimated buyer closing costs in dollars. Example: 12000.",
+                blank_zero=True,
             )
             target_dscr = st.number_input("Target DSCR", step=0.05, key="target_dscr")
 
     with st.expander("Tax Strategy", expanded=False):
         tcol1, tcol2 = st.columns(2)
         with tcol1:
-            county_appraisal_value = st.number_input(
-                "County Appraisal Value ($)", step=5000, key="county_appraisal_value"
+            county_appraisal_value = currency_input(
+                "County Appraisal Value ($)",
+                key="county_appraisal_value",
+                help="County appraisal value in dollars. Example: 430000.",
+                blank_zero=True,
             )
             land_allocation_pct_input = st.number_input(
                 "Land Allocation %", step=1.0, key="land_allocation_pct_input"
             )
-            annual_w2_income = st.number_input(
-                "Annual W-2 Income ($)", step=5000, key="annual_w2_income"
+            annual_w2_income = currency_input(
+                "Annual W-2 Income ($)",
+                key="annual_w2_income",
+                help="Annual W-2 income in dollars for tax strategy modeling. Example: 354000.",
+                blank_zero=True,
             )
         with tcol2:
             five_year_asset_pct_input = st.number_input(
@@ -1338,7 +1403,12 @@ if _deal:
             _tc1, _tc2 = st.columns(2)
             with _tc1:
                 _tgt_dscr = st.number_input("Target DSCR", step=0.05, key="solver_tgt_dscr")
-                _tgt_monthly_net = st.number_input("Min Monthly Net ($)", step=100, key="solver_tgt_monthly_net")
+                _tgt_monthly_net = currency_input(
+                    "Min Monthly Net ($)",
+                    key="solver_tgt_monthly_net",
+                    help="Minimum monthly net cash flow target in dollars. Example: 500.",
+                    blank_zero=True,
+                )
                 _tgt_core_irr = st.number_input("Min Core 5-Yr IRR %", step=0.5, key="solver_tgt_core_irr")
                 _tgt_coc = st.number_input("Min Cash-on-Cash %", value=4.0, step=0.5, key="solver_tgt_coc")
                 _tgt_em = st.number_input("Min Equity Multiple", value=1.25, step=0.05, key="solver_tgt_em")
@@ -1707,30 +1777,24 @@ if _deal:
     )
     _comp_col1, _comp_col2 = st.columns(2)
     with _comp_col1:
-        _comp_revenue = st.number_input(
+        _comp_revenue = currency_input(
             "Nearby Comp Annual Revenue ($)",
-            min_value=0.0,
-            value=None,
-            step=1000.0,
             key="market_comp_annual_revenue",
             help="Example: 78000",
+            allow_none=True,
         )
-        _comp_sold_price = st.number_input(
+        _comp_sold_price = currency_input(
             "Nearby Comp Sold Price ($)",
-            min_value=0.0,
-            value=None,
-            step=5000.0,
             key="market_comp_sold_price",
             help="Example: 600000",
+            allow_none=True,
         )
     with _comp_col2:
-        _comp_nightly_rate = st.number_input(
+        _comp_nightly_rate = currency_input(
             "Nearby Comp Nightly Rate ($)",
-            min_value=0.0,
-            value=None,
-            step=25.0,
             key="market_comp_nightly_rate",
             help="Example: 475",
+            allow_none=True,
         )
         _comp_occupancy_pct = st.number_input(
             "Nearby Comp Occupancy %",
