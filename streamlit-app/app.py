@@ -108,6 +108,46 @@ STATE_ESCROW_DEFAULTS = {
 }
 DEFAULT_ESCROW_RATES = (1.00, 0.35)
 
+STR_PROFILE_DEFAULTS = {
+    "Cabin / Mountain STR": {
+        "property_management_fee_pct_input": 20.0,
+        "maintenance_capex_pct_input": 6.0,
+        "utilities_monthly": 550,
+        "cleaning_turnover_monthly": 250,
+    },
+    "Beach Condo": {
+        "property_management_fee_pct_input": 18.0,
+        "maintenance_capex_pct_input": 4.0,
+        "utilities_monthly": 375,
+        "cleaning_turnover_monthly": 200,
+    },
+    "Lake House": {
+        "property_management_fee_pct_input": 18.0,
+        "maintenance_capex_pct_input": 5.0,
+        "utilities_monthly": 450,
+        "cleaning_turnover_monthly": 225,
+    },
+    "Urban Condo": {
+        "property_management_fee_pct_input": 15.0,
+        "maintenance_capex_pct_input": 3.0,
+        "utilities_monthly": 300,
+        "cleaning_turnover_monthly": 150,
+    },
+    "Suburban Single Family": {
+        "property_management_fee_pct_input": 10.0,
+        "maintenance_capex_pct_input": 4.0,
+        "utilities_monthly": 350,
+        "cleaning_turnover_monthly": 150,
+    },
+    "Luxury STR": {
+        "property_management_fee_pct_input": 20.0,
+        "maintenance_capex_pct_input": 7.0,
+        "utilities_monthly": 750,
+        "cleaning_turnover_monthly": 400,
+    },
+}
+STR_PROFILE_OPTIONS = list(STR_PROFILE_DEFAULTS.keys()) + ["Manual"]
+
 
 def save_deal_to_csv(row: dict) -> None:
     new_row = {col: row.get(col, "") for col in SAVED_DEALS_COLUMNS}
@@ -511,6 +551,8 @@ def format_currency_value(value, blank_zero=False):
 def currency_input(label, key, help=None, allow_none=False, blank_zero=False):
     display_key = f"{key}_currency_display"
     shadow_key = f"{key}_currency_value"
+    st.session_state[f"{key}_currency_allow_none"] = allow_none
+    st.session_state[f"{key}_currency_blank_zero"] = blank_zero
     canonical_value = st.session_state.get(key)
     expected_display = format_currency_value(canonical_value, blank_zero=blank_zero)
     current_display = st.session_state.get(display_key)
@@ -518,6 +560,7 @@ def currency_input(label, key, help=None, allow_none=False, blank_zero=False):
     if (
         display_key not in st.session_state
         or st.session_state.get(shadow_key) != canonical_value
+        or st.session_state.get(f"{key}_needs_currency_format")
         or (
             current_display != expected_display
             and parse_currency_value(current_display) == parse_currency_value(canonical_value)
@@ -538,6 +581,27 @@ def currency_input(label, key, help=None, allow_none=False, blank_zero=False):
     else:
         st.session_state.pop(f"{key}_needs_currency_format", None)
     return numeric_value
+
+
+def normalize_currency_input_displays():
+    display_keys = [
+        key for key in list(st.session_state.keys())
+        if key.endswith("_currency_display")
+    ]
+    for display_key in display_keys:
+        base_key = display_key[: -len("_currency_display")]
+        allow_none = st.session_state.get(f"{base_key}_currency_allow_none", False)
+        blank_zero = st.session_state.get(f"{base_key}_currency_blank_zero", False)
+        parsed = parse_currency_value(st.session_state.get(display_key))
+        numeric_value = None if allow_none and parsed is None else (parsed or 0)
+
+        st.session_state[base_key] = numeric_value
+        st.session_state[f"{base_key}_currency_value"] = numeric_value
+        st.session_state[display_key] = format_currency_value(
+            numeric_value,
+            blank_zero=blank_zero,
+        )
+        st.session_state.pop(f"{base_key}_needs_currency_format", None)
 
 
 def revenue_gap_display(results):
@@ -748,6 +812,22 @@ def deal_score_label(score):
     return "Avoid"
 
 
+def cap_score_for_revenue_premium(score, revenue_premium_pct):
+    if revenue_premium_pct is None or revenue_premium_pct <= 0.35:
+        return score
+    if revenue_premium_pct <= 0.50:
+        return min(score, 69)
+    return min(score, 54)
+
+
+def display_verdict_label(verdict_label, revenue_premium_pct=None):
+    if verdict_label == "DO NOT BUY":
+        return "DO NOT BUY"
+    if revenue_premium_pct is not None and revenue_premium_pct > 0.35:
+        return "SPECULATIVE"
+    return verdict_label
+
+
 def deal_score_status(label):
     if label in {"Elite", "Strong"}:
         return "success"
@@ -757,6 +837,8 @@ def deal_score_status(label):
 
 
 def deal_score_explanation(score_label, revenue_realism_label=None, offer_position=None):
+    if revenue_realism_label == "Revenue needs strong proof":
+        return "Revenue is materially above nearby comp support. Treat this as speculative until stronger proof is available."
     if score_label in {"Elite", "Strong"}:
         if revenue_realism_label in {"Revenue needs support", "Revenue needs strong proof"}:
             return "This deal clears many core investor targets, but revenue assumptions still need verification."
@@ -778,6 +860,7 @@ def calculate_deal_score(
     revenue_gap,
     annual_revenue,
     revenue_realism_label=None,
+    revenue_premium_pct=None,
     offer_position=None,
 ):
     score = 0
@@ -830,6 +913,15 @@ def calculate_deal_score(
     else:
         score += 3
 
+    if revenue_premium_pct is not None and revenue_premium_pct > 0.50:
+        score -= 18
+    elif revenue_premium_pct is not None and revenue_premium_pct > 0.35:
+        score -= 12
+    elif revenue_premium_pct is not None and revenue_premium_pct > 0.20:
+        score -= 7
+    elif revenue_premium_pct is not None and revenue_premium_pct > 0.10:
+        score -= 3
+
     if revenue_realism_label in {"Revenue looks conservative", "Revenue looks grounded"}:
         score += 10
     elif revenue_realism_label == "Revenue needs support":
@@ -848,7 +940,8 @@ def calculate_deal_score(
     else:
         score += 6
 
-    return max(0, min(100, int(round(score))))
+    score = max(0, min(100, int(round(score))))
+    return cap_score_for_revenue_premium(score, revenue_premium_pct)
 
 
 def estimate_monthly_taxes_insurance(purchase_price, property_tax_rate_pct, insurance_rate_pct):
@@ -859,6 +952,14 @@ def estimate_monthly_taxes_insurance(purchase_price, property_tax_rate_pct, insu
     monthly_property_tax = (purchase_price * property_tax_rate) / 12
     monthly_insurance = (purchase_price * insurance_rate) / 12
     return monthly_property_tax + monthly_insurance
+
+
+def apply_profile_defaults(profile):
+    if profile == "Manual" or profile not in STR_PROFILE_DEFAULTS:
+        return
+    for key, value in STR_PROFILE_DEFAULTS[profile].items():
+        st.session_state[key] = value
+    st.session_state["str_profile_applied"] = profile
 
 
 def build_qa_property_inputs(**overrides):
@@ -971,6 +1072,101 @@ def run_qa_scenarios():
                 case_scenario="Base",
             ),
         },
+        {
+            "Scenario": "High IRR / Weak DSCR",
+            "comp_revenue": 90000,
+            "note": "Exit gains may be masking weak debt coverage.",
+            "inputs": build_qa_property_inputs(
+                offer_price=720000,
+                prior_year_annual_income=82000,
+                hoa_monthly=850,
+                taxes_insurance_monthly=1250,
+                annual_market_appreciation=0.08,
+                case_scenario="Aggressive",
+            ),
+        },
+        {
+            "Scenario": "Positive Cash Flow / Overpriced",
+            "comp_revenue": 115000,
+            "note": "Monthly net is positive, but basis may be too high.",
+            "inputs": build_qa_property_inputs(
+                offer_price=940000,
+                prior_year_annual_income=118000,
+                hoa_monthly=300,
+                taxes_insurance_monthly=900,
+                annual_market_appreciation=0.00,
+                case_scenario="Aggressive",
+            ),
+        },
+        {
+            "Scenario": "Cheap Property / Weak Revenue",
+            "comp_revenue": 48000,
+            "note": "Low price does not automatically solve weak operations.",
+            "inputs": build_qa_property_inputs(
+                offer_price=280000,
+                prior_year_annual_income=42000,
+                hoa_monthly=900,
+                taxes_insurance_monthly=650,
+                case_scenario="Base",
+            ),
+        },
+        {
+            "Scenario": "Tax Shelter Illusion",
+            "comp_revenue": 80000,
+            "note": "Tax-enhanced return may overpower weak fundamentals.",
+            "inputs": build_qa_property_inputs(
+                offer_price=780000,
+                prior_year_annual_income=76000,
+                hoa_monthly=1250,
+                taxes_insurance_monthly=1400,
+                county_appraisal_value=950000,
+                five_year_asset_pct=0.22,
+                seven_year_asset_pct=0.08,
+                fifteen_year_asset_pct=0.15,
+                annual_w2_income=650000,
+                case_scenario="Base",
+            ),
+        },
+        {
+            "Scenario": "Strong DSCR / Aggressive Revenue",
+            "comp_revenue": 85000,
+            "note": "Strong DSCR depends on revenue well above comp support.",
+            "inputs": build_qa_property_inputs(
+                offer_price=520000,
+                prior_year_annual_income=122000,
+                hoa_monthly=250,
+                taxes_insurance_monthly=650,
+                case_scenario="Aggressive",
+            ),
+        },
+        {
+            "Scenario": "Strong Operations / Weak Exit",
+            "comp_revenue": 90000,
+            "note": "Operations look healthy, but exit economics are muted.",
+            "inputs": build_qa_property_inputs(
+                offer_price=610000,
+                prior_year_annual_income=90000,
+                hoa_monthly=250,
+                taxes_insurance_monthly=700,
+                annual_market_appreciation=-0.02,
+                cost_to_sell_pct=0.08,
+                case_scenario="Base",
+            ),
+        },
+        {
+            "Scenario": "Safe but Boring",
+            "comp_revenue": 82000,
+            "note": "Stable assumptions with limited upside.",
+            "inputs": build_qa_property_inputs(
+                offer_price=540000,
+                prior_year_annual_income=76000,
+                hoa_monthly=300,
+                taxes_insurance_monthly=650,
+                annual_market_appreciation=0.00,
+                annual_rent_appreciation=0.00,
+                case_scenario="Conservative",
+            ),
+        },
     ]
 
     rows = []
@@ -992,12 +1188,19 @@ def run_qa_scenarios():
             revenue_gap=results.get("revenue_gap_dollars"),
             annual_revenue=inputs.prior_year_annual_income,
             revenue_realism_label=revenue_realism_label,
+            revenue_premium_pct=revenue_delta_pct,
             offer_position=offer_position,
         )
 
+        display_verdict = display_verdict_label(
+            verdict["verdict"],
+            revenue_delta_pct,
+        )
         flags = []
-        if (score >= 70 and verdict["verdict"] == "DO NOT BUY") or (
-            score < 40 and verdict["verdict"] == "BUY"
+        if revenue_delta_pct is not None and revenue_delta_pct > 0.35:
+            flags.append("REV_AGGRESSIVE")
+        if (score >= 70 and display_verdict == "DO NOT BUY") or (
+            score < 40 and display_verdict == "BUY"
         ):
             flags.append("Conflicting logic")
         if (
@@ -1019,21 +1222,221 @@ def run_qa_scenarios():
             )
         ):
             flags.append("Tax IRR overpowering weak core")
+        if results.get("dscr", 0) < 1.00 and (
+            results.get("core_five_year_irr") is not None
+            and results.get("core_five_year_irr") > 0.08
+        ):
+            flags.append("IRR_DSCR_CONFLICT")
+        if results.get("monthly_net", 0) > 0 and (
+            results.get("core_five_year_irr") is None
+            or results.get("core_five_year_irr") < 0.08
+        ):
+            flags.append("CASHFLOW_EXIT_CONFLICT")
 
         rows.append(
             {
                 "Scenario": case["Scenario"],
                 "Score": score,
                 "DSCR": f"{results.get('dscr', 0):.2f}",
+                "Monthly Net": dollars_month(results.get("monthly_net", 0)),
                 "Core IRR": pct(results["core_five_year_irr"]) if results.get("core_five_year_irr") is not None else "N/A",
-                "Verdict": verdict["verdict"],
+                "Tax IRR": pct(results["five_year_irr"]) if results.get("five_year_irr") is not None else "N/A",
+                "Verdict": display_verdict,
                 "Revenue Gap": dollars(results.get("revenue_gap_dollars", 0)),
                 "Revenue Premium": f"{revenue_delta_pct:+.1%}" if revenue_delta_pct is not None else "N/A",
                 "Flags": ", ".join(flags) if flags else "OK",
+                "Note": case.get("note", ""),
             }
         )
 
     return rows
+
+
+def score_bucket(score):
+    return deal_score_label(score)
+
+
+def sweep_values(start_value, end_value, step_count):
+    count = max(2, int(step_count or 2))
+    if count == 1:
+        return [start_value]
+    step = (end_value - start_value) / (count - 1)
+    return [start_value + (step * i) for i in range(count)]
+
+
+def format_sweep_value(variable, value):
+    if variable in {"Annual Revenue", "Offer Price", "Nightly Rate"}:
+        return dollars(value)
+    if variable in {"Interest Rate", "Occupancy", "Exit Cap Rate", "Property Tax Rate"}:
+        return f"{value:.2f}%"
+    return f"{value:,.2f}"
+
+
+def sensitivity_default_range(variable, base_inputs, base_occupancy_pct, base_nightly_rate, base_tax_rate):
+    if variable == "Annual Revenue":
+        base = base_inputs.prior_year_annual_income or 80000
+        return base * 0.70, base * 1.30
+    if variable == "Offer Price":
+        base = base_inputs.offer_price or base_inputs.ask_price or 600000
+        return base * 0.85, base * 1.15
+    if variable == "Interest Rate":
+        return 5.00, 9.00
+    if variable == "Occupancy":
+        return max(20.0, base_occupancy_pct - 20), min(95.0, base_occupancy_pct + 20)
+    if variable == "Nightly Rate":
+        base = base_nightly_rate or 350
+        return base * 0.75, base * 1.25
+    if variable == "Exit Cap Rate":
+        return 5.00, 10.00
+    if variable == "Property Tax Rate":
+        base = base_tax_rate or 1.00
+        return max(0.10, base - 0.75), base + 0.75
+    return 0.0, 1.0
+
+
+def run_sensitivity_sweep(
+    base_inputs,
+    variable,
+    start_value,
+    end_value,
+    step_count,
+    comp_revenue=None,
+    base_occupancy_pct=60.0,
+    base_nightly_rate=None,
+    insurance_rate_pct=0.35,
+):
+    rows = []
+    previous = None
+    base_kwargs = base_inputs.__dict__.copy()
+    base_occupancy = max((base_occupancy_pct or 60.0) / 100, 0.01)
+    base_nightly = base_nightly_rate or (
+        base_inputs.prior_year_annual_income / (365 * base_occupancy)
+        if base_inputs.prior_year_annual_income
+        else 0
+    )
+
+    for value in sweep_values(start_value, end_value, step_count):
+        scenario_kwargs = base_kwargs.copy()
+
+        if variable == "Annual Revenue":
+            scenario_kwargs["prior_year_annual_income"] = value
+        elif variable == "Offer Price":
+            scenario_kwargs["offer_price"] = value
+        elif variable == "Interest Rate":
+            scenario_kwargs["interest_rate"] = value / 100
+        elif variable == "Occupancy":
+            scenario_kwargs["prior_year_annual_income"] = base_nightly * 365 * (value / 100)
+        elif variable == "Nightly Rate":
+            scenario_kwargs["prior_year_annual_income"] = value * 365 * base_occupancy
+        elif variable == "Exit Cap Rate":
+            temp_results = calculate(PropertyInputs(**scenario_kwargs))
+            exit_cap = max(value / 100, 0.001)
+            target_sale_value = temp_results.get("noi", 0) / exit_cap
+            if scenario_kwargs["offer_price"] and target_sale_value > 0:
+                scenario_kwargs["annual_market_appreciation"] = (
+                    (target_sale_value / scenario_kwargs["offer_price"]) ** (1 / 5)
+                ) - 1
+        elif variable == "Property Tax Rate":
+            purchase_price = scenario_kwargs.get("offer_price") or scenario_kwargs.get("ask_price")
+            scenario_kwargs["taxes_insurance_monthly"] = estimate_monthly_taxes_insurance(
+                purchase_price,
+                value,
+                insurance_rate_pct,
+            )
+
+        scenario_inputs = PropertyInputs(**scenario_kwargs)
+        results = calculate(scenario_inputs)
+        verdict = evaluate(results)
+        revenue_delta_pct = (
+            (scenario_inputs.prior_year_annual_income - comp_revenue) / comp_revenue
+            if comp_revenue
+            else None
+        )
+        revenue_realism_label, _ = market_reality_label(revenue_delta_pct, "Revenue")
+        offer_position = offer_position_label(
+            scenario_inputs.offer_price,
+            scenario_inputs.prior_year_annual_income,
+        )
+        score = calculate_deal_score(
+            dscr=results.get("dscr"),
+            monthly_net=results.get("monthly_net"),
+            core_irr=results.get("core_five_year_irr"),
+            revenue_gap=results.get("revenue_gap_dollars"),
+            annual_revenue=scenario_inputs.prior_year_annual_income,
+            revenue_realism_label=revenue_realism_label,
+            revenue_premium_pct=revenue_delta_pct,
+            offer_position=offer_position,
+        )
+        display_verdict = display_verdict_label(verdict["verdict"], revenue_delta_pct)
+        core_irr = results.get("core_five_year_irr")
+
+        flags = []
+        if previous:
+            if previous["Verdict"] != display_verdict:
+                flags.append("VERDICT_CHANGE")
+            if previous["Score Bucket"] != score_bucket(score):
+                flags.append("SCORE_BUCKET_CHANGE")
+            if (previous["DSCR Raw"] < 1.0 <= results["dscr"]) or (
+                previous["DSCR Raw"] >= 1.0 > results["dscr"]
+            ):
+                flags.append("DSCR_BREAK")
+            if (previous["Monthly Net Raw"] < 0 <= results["monthly_net"]) or (
+                previous["Monthly Net Raw"] >= 0 > results["monthly_net"]
+            ):
+                flags.append("CASHFLOW_BREAK")
+            prev_irr = previous["Core IRR Raw"]
+            if prev_irr is not None and core_irr is not None and (
+                (prev_irr < 0.10 <= core_irr) or (prev_irr >= 0.10 > core_irr)
+            ):
+                flags.append("IRR_BREAK")
+
+        row = {
+            "Sweep Raw": value,
+            "Sweep Value": format_sweep_value(variable, value),
+            "Score": score,
+            "Score Bucket": score_bucket(score),
+            "DSCR": f"{results['dscr']:.2f}",
+            "DSCR Raw": results["dscr"],
+            "Core IRR": pct(core_irr) if core_irr is not None else "N/A",
+            "Core IRR Raw": core_irr,
+            "Monthly Net": dollars_month(results["monthly_net"]),
+            "Monthly Net Raw": results["monthly_net"],
+            "Revenue Needed": dollars(max(results.get("revenue_gap_dollars", 0), 0)),
+            "Revenue Needed Raw": max(results.get("revenue_gap_dollars", 0), 0),
+            "Verdict": display_verdict,
+            "Revenue Premium": f"{revenue_delta_pct:+.1%}" if revenue_delta_pct is not None else "N/A",
+            "Revenue Premium Raw": revenue_delta_pct,
+            "Flags": ", ".join(flags) if flags else "",
+        }
+        rows.append(row)
+        previous = row
+
+    return rows
+
+
+def sensitivity_insights(rows, variable):
+    insights = []
+    for row in rows:
+        if row["Monthly Net Raw"] >= 0:
+            insights.append(f"Deal becomes cash flow positive at {row['Sweep Value']}.")
+            break
+    for row in rows:
+        if row["DSCR Raw"] < 1.0:
+            insights.append(f"DSCR falls below 1.0 at {row['Sweep Value']}.")
+            break
+    for row in rows:
+        if "VERDICT_CHANGE" in row["Flags"]:
+            insights.append(f"Verdict changes to {row['Verdict']} at {row['Sweep Value']}.")
+            break
+    for row in rows:
+        if row["Revenue Premium Raw"] is not None and row["Revenue Premium Raw"] > 0.35:
+            insights.append(
+                f"Revenue premium exceeds 35% at {row['Sweep Value']}, triggering speculative revenue risk."
+            )
+            break
+    if not insights:
+        insights.append(f"No major score, DSCR, cash flow, IRR, or verdict cliffs detected across this {variable} sweep.")
+    return insights
 
 
 def build_before_offer_checklist(
@@ -1317,6 +1720,11 @@ default_values = {
     "property_tax_rate_pct_input": 1.00,
     "insurance_rate_pct_input": 0.35,
     "utilities_monthly": 0,
+    "str_profile": "Cabin / Mountain STR",
+    "str_profile_applied": "",
+    "property_management_fee_pct_input": 20.0,
+    "maintenance_capex_pct_input": 6.0,
+    "cleaning_turnover_monthly": 250,
     "target_dscr": 1.00,
     "down_payment_pct_input": 10.0,
     "interest_rate_input": 6.75,
@@ -1357,6 +1765,14 @@ if st.session_state.get("pending_use_auto_escrow"):
     st.session_state.pop("pending_use_auto_escrow", None)
     st.session_state.pop("pending_auto_escrow_value", None)
 
+if st.session_state.get("pending_reset_profile_defaults"):
+    apply_profile_defaults(st.session_state.get("str_profile", "Cabin / Mountain STR"))
+    st.session_state.pop("pending_reset_profile_defaults", None)
+
+_active_profile = st.session_state.get("str_profile", "Cabin / Mountain STR")
+if _active_profile != "Manual" and st.session_state.get("str_profile_applied") != _active_profile:
+    apply_profile_defaults(_active_profile)
+
 # --- Pending start new deal (must run before any widgets with these keys are created) ---
 if st.session_state.get("pending_start_new_deal"):
     _fresh_deal_values = {
@@ -1375,7 +1791,12 @@ if st.session_state.get("pending_start_new_deal"):
         "property_state": "",
         "property_tax_rate_pct_input": default_values["property_tax_rate_pct_input"],
         "insurance_rate_pct_input": default_values["insurance_rate_pct_input"],
-        "utilities_monthly": 0,
+        "str_profile": "Cabin / Mountain STR",
+        "str_profile_applied": "",
+        "property_management_fee_pct_input": 20.0,
+        "maintenance_capex_pct_input": 6.0,
+        "utilities_monthly": 550,
+        "cleaning_turnover_monthly": 250,
         "target_dscr": default_values["target_dscr"],
         "down_payment_pct_input": default_values["down_payment_pct_input"],
         "interest_rate_input": default_values["interest_rate_input"],
@@ -1486,6 +1907,21 @@ st.divider()
 
 use_auto_escrow = False
 
+section_header("Assumption Profile", "Starting operating assumptions for STR underwriting.")
+muted_text(
+    "These are starting assumptions only. They help avoid underestimating STR operating costs. You can override them if you have actuals."
+)
+str_profile = st.selectbox(
+    "Property / STR Profile",
+    STR_PROFILE_OPTIONS,
+    index=STR_PROFILE_OPTIONS.index(st.session_state.get("str_profile", "Cabin / Mountain STR"))
+    if st.session_state.get("str_profile", "Cabin / Mountain STR") in STR_PROFILE_OPTIONS
+    else 0,
+    key="str_profile",
+)
+if str_profile != "Manual" and st.session_state.get("str_profile_applied") != str_profile:
+    st.rerun()
+
 with st.form("property_form"):
     section_header("Quick Deal Inputs")
     muted_text(
@@ -1584,6 +2020,7 @@ with st.form("property_form"):
             use_auto_escrow = st.form_submit_button(
                 "Use Auto Estimate",
                 use_container_width=True,
+                on_click=normalize_currency_input_displays,
             )
 
     with st.expander("Property Details", expanded=False):
@@ -1596,12 +2033,40 @@ with st.form("property_form"):
         with pcol2:
             bathrooms = st.number_input("Bathrooms", step=0.5, key="bathrooms")
             square_feet = st.number_input("Square Feet", step=50, key="square_feet")
+
+    with st.expander("Advanced Operating Assumptions", expanded=False):
+        muted_text(
+            "Profile defaults are editable. The current calculator directly uses the utilities line; management, reserve, and cleaning assumptions are shown for disciplined STR review."
+        )
+        acol1, acol2 = st.columns(2)
+        with acol1:
+            property_management_fee_pct_input = st.number_input(
+                "Property Management Fee %",
+                step=0.5,
+                key="property_management_fee_pct_input",
+            )
+            maintenance_capex_pct_input = st.number_input(
+                "Maintenance / CapEx Reserve %",
+                step=0.5,
+                key="maintenance_capex_pct_input",
+            )
+        with acol2:
             utilities_monthly = currency_input(
-                "Utilities (not in HOA, $/mo)",
+                "Utilities / Internet / Supplies ($/mo)",
                 key="utilities_monthly",
-                help="Monthly utility estimate in dollars. Example: 250.",
+                help="Monthly utility, internet, and supplies estimate in dollars.",
                 blank_zero=True,
             )
+            cleaning_turnover_monthly = currency_input(
+                "Cleaning / Turnover Allowance ($/mo)",
+                key="cleaning_turnover_monthly",
+                help="Monthly allowance for cleaning or turnover costs if not already embedded in revenue or owner statements.",
+                blank_zero=True,
+            )
+        if str_profile != "Manual":
+            if st.form_submit_button("Reset to Profile Defaults", use_container_width=True):
+                st.session_state["pending_reset_profile_defaults"] = True
+                st.rerun()
 
     with st.expander("Financing", expanded=False):
         fcol1, fcol2 = st.columns(2)
@@ -1727,7 +2192,12 @@ with st.form("property_form"):
         roadmap_df = pd.DataFrame(roadmap_data)
         st.dataframe(roadmap_df, use_container_width=True, hide_index=True)
 
-    submitted = st.form_submit_button("Analyze Deal", use_container_width=True, type="primary")
+    submitted = st.form_submit_button(
+        "Analyze Deal",
+        use_container_width=True,
+        type="primary",
+        on_click=normalize_currency_input_displays,
+    )
 
 if use_auto_escrow:
     st.session_state["pending_use_auto_escrow"] = True
@@ -1750,6 +2220,148 @@ with st.expander("Developer / QA Runner", expanded=False):
             )
         else:
             st.success("Stress test completed with no score/verdict flags.")
+
+    st.divider()
+    st.markdown("**Sensitivity Sweep Engine**")
+    muted_text(
+        "Stress test a single assumption across a range to identify score cliffs, unstable underwriting behavior, and verdict transition points."
+    )
+
+    _base_sweep_inputs = PropertyInputs(
+        ask_price=ask_price,
+        offer_price=offer_price,
+        down_payment_pct=down_payment_pct_input / 100,
+        interest_rate=interest_rate_input / 100,
+        prior_year_annual_income=prior_year_annual_income,
+        loan_term_years=int(loan_term_years),
+        case_scenario=case_scenario,
+        hoa_monthly=hoa_monthly,
+        taxes_insurance_monthly=taxes_insurance_monthly,
+        utilities_monthly=utilities_monthly,
+        county_appraisal_value=county_appraisal_value,
+        land_allocation_pct=land_allocation_pct_input / 100,
+        five_year_asset_pct=five_year_asset_pct_input / 100,
+        seven_year_asset_pct=seven_year_asset_pct_input / 100,
+        fifteen_year_asset_pct=fifteen_year_asset_pct_input / 100,
+        twenty_seven_half_year_asset_pct=twenty_seven_half_year_asset_pct_input / 100,
+        annual_w2_income=annual_w2_income,
+        closing_costs=closing_costs,
+        annual_market_appreciation=annual_market_appreciation_input / 100,
+        annual_rent_appreciation=annual_rent_appreciation_input / 100,
+        cost_to_sell_pct=cost_to_sell_pct_input / 100,
+        depreciation_recapture_tax_rate=depreciation_recapture_tax_rate_input / 100,
+        target_dscr=target_dscr,
+    )
+    _base_comp_revenue = parse_currency_value(st.session_state.get("market_comp_annual_revenue"))
+    _base_occupancy_pct = (
+        st.session_state.get("market_comp_occupancy_pct")
+        if st.session_state.get("market_comp_occupancy_pct")
+        else 60.0
+    )
+    _base_nightly_rate = (
+        parse_currency_value(st.session_state.get("market_comp_nightly_rate"))
+        or (
+            prior_year_annual_income / (365 * (_base_occupancy_pct / 100))
+            if prior_year_annual_income and _base_occupancy_pct
+            else 0
+        )
+    )
+
+    _sweep_variable = st.selectbox(
+        "Sweep Variable",
+        [
+            "Annual Revenue",
+            "Offer Price",
+            "Interest Rate",
+            "Occupancy",
+            "Nightly Rate",
+            "Exit Cap Rate",
+            "Property Tax Rate",
+        ],
+        key="sweep_variable",
+    )
+    _sweep_start_default, _sweep_end_default = sensitivity_default_range(
+        _sweep_variable,
+        _base_sweep_inputs,
+        _base_occupancy_pct,
+        _base_nightly_rate,
+        property_tax_rate_pct_input,
+    )
+    _sweep_key = re.sub(r"[^a-z0-9]+", "_", _sweep_variable.lower()).strip("_")
+    _sw1, _sw2, _sw3 = st.columns(3)
+    with _sw1:
+        _sweep_start = st.number_input(
+            "Start Value",
+            value=float(_sweep_start_default),
+            key=f"sweep_start_{_sweep_key}",
+        )
+    with _sw2:
+        _sweep_end = st.number_input(
+            "End Value",
+            value=float(_sweep_end_default),
+            key=f"sweep_end_{_sweep_key}",
+        )
+    with _sw3:
+        _sweep_steps = st.number_input(
+            "Step Count",
+            min_value=2,
+            max_value=100,
+            value=20,
+            step=1,
+            key="sweep_step_count",
+        )
+
+    if st.button("Run Sensitivity Sweep", use_container_width=True):
+        _sweep_rows = run_sensitivity_sweep(
+            _base_sweep_inputs,
+            _sweep_variable,
+            _sweep_start,
+            _sweep_end,
+            int(_sweep_steps),
+            comp_revenue=_base_comp_revenue,
+            base_occupancy_pct=_base_occupancy_pct,
+            base_nightly_rate=_base_nightly_rate,
+            insurance_rate_pct=insurance_rate_pct_input,
+        )
+        _sweep_df = pd.DataFrame(_sweep_rows)
+        _display_cols = [
+            "Sweep Value",
+            "Score",
+            "DSCR",
+            "Core IRR",
+            "Monthly Net",
+            "Revenue Needed",
+            "Verdict",
+            "Revenue Premium",
+            "Flags",
+        ]
+        st.dataframe(_sweep_df[_display_cols], use_container_width=True, hide_index=True)
+
+        _chart_df = _sweep_df[
+            ["Sweep Raw", "Score", "DSCR Raw", "Monthly Net Raw"]
+        ].rename(
+            columns={
+                "Sweep Raw": "Sweep Value",
+                "DSCR Raw": "DSCR",
+                "Monthly Net Raw": "Monthly Net",
+            }
+        )
+        _chart_df = _chart_df.set_index("Sweep Value")
+        _ch1, _ch2, _ch3 = st.columns(3)
+        with _ch1:
+            st.caption("Score vs Sweep Variable")
+            st.line_chart(_chart_df[["Score"]])
+        with _ch2:
+            st.caption("DSCR vs Sweep Variable")
+            st.line_chart(_chart_df[["DSCR"]])
+        with _ch3:
+            st.caption("Monthly Net vs Sweep Variable")
+            st.line_chart(_chart_df[["Monthly Net"]])
+
+        info_card(
+            "Sweep Insights",
+            " ".join(sensitivity_insights(_sweep_rows, _sweep_variable)),
+        )
 
 
 if submitted:
@@ -1850,7 +2462,6 @@ if _deal:
         _tier_net_default = 0
         _tier_irr_default = 8.0
 
-    verdict_label = verdict.get("verdict", "REVIEW")
     _revenue_display = revenue_gap_display(results)
     _score_comp_revenue = parse_currency_value(
         st.session_state.get("market_comp_annual_revenue")
@@ -1877,13 +2488,21 @@ if _deal:
         revenue_gap=results.get("revenue_gap_dollars"),
         annual_revenue=_prior_year_annual_income,
         revenue_realism_label=_score_revenue_realism_label,
+        revenue_premium_pct=_score_revenue_delta_pct,
         offer_position=_score_offer_position,
     )
     _deal_score_label = deal_score_label(_deal_score)
+    verdict_label = display_verdict_label(
+        verdict.get("verdict", "REVIEW"),
+        _score_revenue_delta_pct,
+    )
 
     section_header("Deal Decision", "Read this first, then inspect the risks and offer path.")
 
-    if _deal_tier == "STRONG":
+    if _score_revenue_delta_pct is not None and _score_revenue_delta_pct > 0.35:
+        status_badge("SPECULATIVE", "danger")
+        summary = "Aggressive assumptions: revenue is materially above nearby comp support. Verify revenue proof before treating this as offer-ready."
+    elif _deal_tier == "STRONG":
         status_badge("STRONG DEAL", "success")
         summary = "This clears baseline targets. Verify assumptions, then consider offer strategy."
     elif _deal_tier == "FIXABLE":
@@ -2569,7 +3188,7 @@ if _deal:
             else ""
         ),
         "pass_reason": pass_reason,
-        "verdict": verdict.get("verdict", ""),
+        "verdict": verdict_label,
         "monthly_net": results["monthly_net"],
         "dscr": results["dscr"],
         "core_five_year_irr": results["core_five_year_irr"],
